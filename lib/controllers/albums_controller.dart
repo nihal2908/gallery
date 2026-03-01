@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
-import '../core/app_settings.dart';
+import '../core/settings/app_settings.dart';
 import '../models/private_asset_model.dart';
 import '../services/media_service.dart';
 import '../services/private_asset_service.dart';

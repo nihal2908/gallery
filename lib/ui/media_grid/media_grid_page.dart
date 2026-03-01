@@ -4,7 +4,8 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../../controllers/albums_controller.dart';
 import '../../controllers/media_controller.dart';
-import '../../core/app_settings.dart';
+import '../../core/operations/operation_dialog.dart';
+import '../../core/settings/app_settings.dart';
 import '../../dependency_injector.dart';
 import '../../services/media_service.dart';
 import '../../services/native_media_service.dart';
@@ -129,7 +130,7 @@ class _MediaGridPageState extends State<MediaGridPage> {
                           builder: (_) => AlbumGridPage(
                             mode: AlbumGridMode.pick,
                             title: 'Copy to album',
-                            onAlbumPicked: controller.copySelectedToAlbum,
+                            onAlbumPicked: (album) => _showCopyToAlbumDialog(album),
                           ),
                         ),
                       ),
@@ -144,7 +145,7 @@ class _MediaGridPageState extends State<MediaGridPage> {
                           builder: (_) => AlbumGridPage(
                             mode: AlbumGridMode.pick,
                             title: 'Move to album',
-                            onAlbumPicked: controller.moveSelectedToAlbum,
+                            onAlbumPicked: (album) => _showMoveToAlbumDialog(album),
                           ),
                         ),
                       ),
@@ -152,28 +153,7 @@ class _MediaGridPageState extends State<MediaGridPage> {
                   // hide button
                   if (!controller.isNoSelected)
                     PopupMenuItem(
-                      onTap: () async {
-                        final passwordCorrect = (await controller.hasPassword())
-                            ? await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PasswordEntryPage(
-                                    mode: PasswordEntryPageMode.authenticate,
-                                  ),
-                                ),
-                              )
-                            : await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PasswordEntryPage(
-                                    mode: PasswordEntryPageMode.setPassword,
-                                  ),
-                                ),
-                              );
-                        if (passwordCorrect != null && passwordCorrect) {
-                          await controller.moveSelectedToTrash();
-                        }
-                      },
+                      onTap: _showHideDialog,
                       child: Text('Hide'),
                     ),
                 ],
@@ -273,5 +253,25 @@ class _MediaGridPageState extends State<MediaGridPage> {
         );
       },
     );
+  }
+
+  void _showCopyToAlbumDialog(AssetPathEntity album) {
+
+  }
+
+  void _showMoveToAlbumDialog(AssetPathEntity album) {
+
+  }
+  void _showHideDialog() {
+    showOperationDialog(
+      context: context,
+      title: 'Hide ${controller.selectedCount.value} item(s)?',
+      confirmText: 'Hide',
+      description: 'These items can be seen from Settings > Hidden Album.',
+      onConfirm: (op) => controller.hideSelected(op: op),
+    );
+  }
+  void _showMoveToTrashDialog() {
+
   }
 }

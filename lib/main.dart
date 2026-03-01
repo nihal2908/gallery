@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gallery/ui/album/album_grid_page.dart';
 
-import 'core/app_settings.dart';
+import 'core/settings/app_settings.dart';
 import 'dependency_injector.dart';
 
 void main() async {

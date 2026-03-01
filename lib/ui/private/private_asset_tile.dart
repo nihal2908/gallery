@@ -1,8 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:gallery/models/private_asset_model.dart';
 
 class PrivateAssetTile extends StatelessWidget {
-  final PrivateAsset asset;
+  final PrivateAsset item;
+  final Uint8List? thumbnail;
   final bool isSelected;
   final bool isSelectionMode;
   final VoidCallback onSelect;
@@ -10,7 +13,8 @@ class PrivateAssetTile extends StatelessWidget {
 
   const PrivateAssetTile({
     super.key,
-    required this.asset,
+    required this.item,
+    required this.thumbnail,
     required this.isSelected,
     required this.isSelectionMode,
     required this.onOpen,
@@ -25,7 +29,7 @@ class PrivateAssetTile extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _Thumbnail(item: asset),
+          _Thumbnail(thumbnail: thumbnail, item: item),
           _SelectionOverlay(
             isSelected: isSelected,
             isSelectionMode: isSelectionMode,
@@ -38,9 +42,10 @@ class PrivateAssetTile extends StatelessWidget {
 }
 
 class _Thumbnail extends StatelessWidget {
+  final Uint8List? thumbnail;
   final PrivateAsset item;
 
-  const _Thumbnail({required this.item});
+  const _Thumbnail({required this.thumbnail, required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -49,11 +54,9 @@ class _Thumbnail extends StatelessWidget {
       children: [
         Container(
           color: Colors.grey[400],
-          // child: Hero(
-          //         tag: item.id,
-          //         child: Image.memory(
-          //         ),
-          //       )
+          child: thumbnail != null
+              ? Image.memory(thumbnail!, fit: BoxFit.cover)
+              : null,
         ),
         if (item.type == AssetMediaType.video)
           Positioned(

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../dependency_injector.dart';
 import '../../models/private_asset_model.dart';
 import '../../services/authentication_service.dart';
-import '../../core/app_settings.dart';
+import '../../core/settings/app_settings.dart';
 import '../private/password_entry_page.dart';
 import '../private/private_grid_page.dart';
 import '../private/secure_gate.dart';

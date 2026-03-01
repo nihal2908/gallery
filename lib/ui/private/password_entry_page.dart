@@ -158,7 +158,12 @@ import 'package:flutter/material.dart';
 import '../../dependency_injector.dart';
 import '../../services/authentication_service.dart';
 
-enum PasswordEntryPageMode { setPassword, changePassword, authenticate }
+enum PasswordEntryPageMode {
+  setPassword,
+  changePassword,
+  authenticate,
+  checkPassword,
+}
 
 class PasswordEntryPage extends StatefulWidget {
   final PasswordEntryPageMode mode;
@@ -199,6 +204,8 @@ class _PasswordEntryPageState extends State<PasswordEntryPage> {
       case PasswordEntryPageMode.authenticate:
         title = "Enter Password to view hidden photos and videos.";
         break;
+      case PasswordEntryPageMode.checkPassword:
+        title = "Enter Password to proceed.";
     }
   }
 
@@ -266,7 +273,9 @@ class _PasswordEntryPageState extends State<PasswordEntryPage> {
         _clearPin();
       }
     } else {
-      final bool correct = await _authenticationService.authenticate(password);
+      final bool correct = (widget.mode == PasswordEntryPageMode.authenticate)
+          ? await _authenticationService.authenticate(password)
+          : await _authenticationService.isPasswordCorrect(password);
 
       if (!correct) {
         status = "Incorrect password, try again.";

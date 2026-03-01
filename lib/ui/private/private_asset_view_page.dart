@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:gallery/models/private_asset_model.dart';
 import 'package:photo_view/photo_view.dart';
 
 import '../../controllers/private_asset_controller.dart';
@@ -39,23 +40,33 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
             title: controller.isSelectionMode.value
                 ? Text('${controller.selectedCount.value} selected')
                 : Text(
-                    '${controller.currentIndex.value + 1}/${controller.items.length}',
+                    '${controller.currentIndex.value + 1}/${controller.itemCount}',
                   ),
             actions: [
-              if (!controller.isSelectionMode.value)
+              if (controller.category == PrivateCategory.trash &&
+                  !controller.isSelectionMode.value)
                 IconButton(
                   onPressed: () {
-                    controller.restore([controller.currentItem]);
+                    _showRestoreConfirmation();
                   },
                   icon: Icon(Icons.restore),
                 ),
+              if (controller.category == PrivateCategory.hidden &&
+                  !controller.isSelectionMode.value)
+                IconButton(
+                  onPressed: () {
+                    _showUnhideConfirmation();
+                  },
+                  icon: Icon(Icons.visibility),
+                ),
               if (!controller.isSelectionMode.value)
                 IconButton(
                   onPressed: () {
-                    controller.permanentlyDelete([controller.currentItem]);
+                    _showDeleteConfirmation();
                   },
                   icon: Icon(Icons.delete),
                 ),
+
               if (controller.isSelectionMode.value)
                 IconButton(
                   onPressed: () {
@@ -79,7 +90,7 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
                   },
                   dragStartBehavior: DragStartBehavior.down,
                   pageSnapping: true,
-                  itemCount: controller.items.length,
+                  itemCount: controller.itemCount,
                   itemBuilder: (_, index) {
                     // final item = controller.items[index];
                     // return item.type == AssetMediaType.image
@@ -96,35 +107,72 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
     );
   }
 
-  void showDeleteConfirmationDialog(
-    BuildContext context,
-    VoidCallback onConfirm,
-  ) {
+  void _showDeleteConfirmation() {
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete this Media?'),
-          content: const Text(
-            'The item will be deleted permanently from the device.',
+      builder: (context) => AlertDialog(
+        title: Text('Delete item?'),
+        content: Text('The item will be permanently removed from the device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                onConfirm();
-                Navigator.of(context).pop();
-              },
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+          TextButton(
+            onPressed: () {
+              controller.permanentlyDeleteCurrent();
+              Navigator.pop(context);
+            },
+            child: Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUnhideConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Unhide this item?'),
+        content: Text('The item will be moved to Pictures/Unhidden.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              controller.unhideCurrent();
+              Navigator.pop(context);
+            },
+            child: Text('Unhide'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRestoreConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Restore this item?'),
+        content: Text('The item will be moved to Pictures/Restored.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              controller.restoreCurrent();
+              Navigator.pop(context);
+            },
+            child: Text('Restore'),
+          ),
+        ],
+      ),
     );
   }
 }

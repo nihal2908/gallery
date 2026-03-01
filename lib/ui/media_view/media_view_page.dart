@@ -280,7 +280,7 @@ class _BottomBar extends StatelessWidget {
                                     MaterialPageRoute(
                                       builder: (_) => PasswordEntryPage(
                                         mode:
-                                            PasswordEntryPageMode.authenticate,
+                                            PasswordEntryPageMode.checkPassword,
                                       ),
                                     ),
                                   ).then((value) async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gallery/services/authentication_service.dart';
 
 import '../../controllers/private_asset_controller.dart';
+import '../../core/operations/operation_dialog.dart';
 import '../../dependency_injector.dart';
 import '../../models/private_asset_model.dart';
 import '../../services/private_asset_service.dart';
@@ -26,9 +27,7 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
       sl<AuthenticationService>(),
       widget.category,
     );
-    widget.category == PrivateCategory.trash
-        ? controller.loadTrash()
-        : controller.loadHidden();
+    controller.init();
     super.initState();
   }
 
@@ -53,9 +52,11 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
                 : null,
             title: controller.isSelectionMode.value
                 ? Text(
-                    '${controller.selectedCount.value}/${controller.items.length} selected',
+                    '${controller.selectedCount.value}/${controller.itemCount} selected',
                   )
-                : widget.category == PrivateCategory.trash ? Text('Recycle Bin (${controller.items.length})') : Text('Hidden (${controller.items.length})'),
+                : widget.category == PrivateCategory.trash
+                ? Text('Recycle Bin (${controller.itemCount})')
+                : Text('Hidden (${controller.itemCount})'),
             actions: [
               if (!controller.isSelectionMode.value)
                 IconButton(
@@ -64,25 +65,27 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
                     controller.enterSelectionMode();
                   },
                 ),
-              if (widget.category == PrivateCategory.trash && controller.hasSelection)
+              if (widget.category == PrivateCategory.trash &&
+                  controller.hasSelection)
                 IconButton(
                   icon: const Icon(Icons.restore),
                   onPressed: () {
-                    controller.restoreSelected();
+                    _showRestoreConfirmation();
                   },
                 ),
-                if (widget.category == PrivateCategory.hidden && controller.hasSelection)
+              if (widget.category == PrivateCategory.hidden &&
+                  controller.hasSelection)
                 IconButton(
                   icon: const Icon(Icons.visibility),
                   onPressed: () {
-                    controller.unhideSelected();
+                    _showUnhideConfirmation();
                   },
                 ),
               if (controller.hasSelection)
                 IconButton(
                   icon: const Icon(Icons.delete),
                   onPressed: () {
-                    controller.permanentlyDeleteSelected();
+                    _showDeleteConfirmation();
                   },
                 ),
               if (controller.isSelectionMode.value && controller.areAllSelected)
@@ -110,11 +113,13 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
               crossAxisSpacing: 4,
               mainAxisSpacing: 4,
             ),
-            itemCount: controller.items.length,
+            itemCount: controller.itemCount,
             itemBuilder: (_, index) {
-              final item = controller.items[index];
+              final item = controller.item(index);
+              final thumbnail = controller.getThumbnailAt(index);
               return PrivateAssetTile(
-                asset: item,
+                item: item,
+                thumbnail: thumbnail,
                 isSelected: controller.selectedItems.contains(item),
                 isSelectionMode: controller.isSelectionMode.value,
                 onOpen: () {
@@ -137,6 +142,36 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
           ),
         );
       },
+    );
+  }
+
+  void _showDeleteConfirmation() {
+    showOperationDialog(
+      context: context,
+      title: 'Delete ${controller.selectedCount.value} item(s)?',
+      confirmText: 'Delete',
+      description: 'These items will be permanently removed from the device.',
+      onConfirm: (op) => controller.permanentlyDeleteSelected(op: op),
+    );
+  }
+
+  void _showUnhideConfirmation() {
+    showOperationDialog(
+      context: context,
+      title: 'Unhide ${controller.selectedCount.value} item(s)?',
+      confirmText: 'Unhide',
+      description: 'These items will be moved to Pictures/Unhidden.',
+      onConfirm: (op) => controller.unhideSelected(op: op),
+    );
+  }
+
+  void _showRestoreConfirmation() {
+    showOperationDialog(
+      context: context,
+      title: 'Restore ${controller.selectedCount.value} item(s)?',
+      confirmText: 'Restore',
+      description: 'These items will be moved to Pictures/Restored.',
+      onConfirm: (op) => controller.permanentlyDeleteSelected(op: op),
     );
   }
 }

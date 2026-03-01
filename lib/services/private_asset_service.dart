@@ -1,13 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
+import 'package:gallery/core/operations/operation_controller.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../core/app_settings.dart';
+import '../core/settings/app_settings.dart';
 import '../models/private_asset_model.dart';
 import 'authentication_service.dart';
 
@@ -100,126 +101,128 @@ class PrivateAssetService {
     return await _authService.hasPassword();
   }
 
-  Future<void> moveToTrash(List<AssetEntity> assets) async {
+  Future<void> moveToTrash(
+    List<AssetEntity> assets, {
+    OperationController? op,
+  }) async {
+    final trashDirPath = await getTrashPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = assets.length;
+    int done = 0;
+
     for (final asset in assets) {
       final file = await asset.originFile;
       if (file == null) return;
 
-      final trashDirPath = await getTrashPath();
       final targetPath = p.join(trashDirPath, asset.id);
-
-      // 1. Physical move (Copy then Delete from MediaStore)
       await file.copy(targetPath);
 
-      // 2. Map to Model
       final item = PrivateAsset.fromAssetEntity(asset, PrivateCategory.trash);
 
-      // 3. Database entry
       await _db.insert(
         'private_assets',
         item.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
     }
 
-    // 4. Final step: Remove from System Gallery
     await PhotoManager.editor.deleteWithIds(assets.map((a) => a.id).toList());
+    if (op != null) op.resultMessage = '$done item(s) deleted successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
   }
 
-  Future<void> moveToHidden(List<AssetEntity> assets) async {
+  Future<void> moveToHidden(
+    List<AssetEntity> assets, {
+    OperationController? op,
+  }) async {
     final hiddenDirPath = await getHiddenPath();
-    // add print statement to check path
-    print("Hidden Dir Path: $hiddenDirPath");
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = assets.length;
+    int done = 0;
 
     for (final asset in assets) {
       final file = await asset.originFile;
       if (file == null) continue;
-      print("Processing asset: ${asset.id}, file path: ${file.path}");
 
-      // 1️⃣ Read original
       final originalBytes = await file.readAsBytes();
-      print("Original size: ${originalBytes.length} bytes");
 
-      // 2️⃣ Get native thumbnail
       final thumbBytes = await asset.thumbnailDataWithSize(
         const ThumbnailSize(150, 150),
       );
 
       if (thumbBytes == null) continue;
 
-      print("Thumbnail size: ${thumbBytes.length} bytes");
-      // 3️⃣ Encrypt both
       final encryptedOriginal = encryptBytes(originalBytes);
-
-      print("Encrypted original size: ${encryptedOriginal.length} bytes");
-
       final encryptedThumb = encryptBytes(thumbBytes);
 
-      print("Encrypted thumbnail size: ${encryptedThumb.length} bytes");
-
-      // 4️⃣ Save
       await File(
         p.join(hiddenDirPath, "${asset.id}.enc"),
       ).writeAsBytes(encryptedOriginal);
-
-      print(
-        "Encrypted original saved at: ${p.join(hiddenDirPath, "${asset.id}.enc")}",
-      );
 
       await File(
         p.join(hiddenDirPath, "${asset.id}_thumb.enc"),
       ).writeAsBytes(encryptedThumb);
 
-      print(
-        "Encrypted thumbnail saved at: ${p.join(hiddenDirPath, "${asset.id}_thumb.enc")}",
-      );
-
-      // 5️⃣ Save metadata
       final item = PrivateAsset.fromAssetEntity(asset, PrivateCategory.hidden);
-
-      print("Mapped asset to model: ${item.id}, title: ${item.title}");
       await _db.insert(
         'private_assets',
         item.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      print("Metadata saved to DB for asset: ${item.id}");
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
     }
 
-    // 6️⃣ Delete from gallery
     await PhotoManager.editor.deleteWithIds(assets.map((a) => a.id).toList());
+    if (op != null) op.resultMessage = '$done item(s) hidden successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
   }
 
   Uint8List encryptBytes(Uint8List bytes) {
-    print("Encrypting data of size: ${bytes.length} bytes");
     final encrypter = Encrypter(AES(_appSettings.encryptionKey));
-    print("Encryption key: ${_appSettings.encryptionKey.base64}");
-    final encrypted = encrypter.encryptBytes(
-      bytes,
-      iv: IV.fromSecureRandom(16),
-    );
-    print("Encrypted data size: ${encrypted.bytes.length} bytes");
-
-    // Store IV at beginning of file
-    return Uint8List.fromList(encrypted.bytes);
+    final iv = IV.fromSecureRandom(16);
+    final encrypted = encrypter.encryptBytes(bytes, iv: iv);
+    return Uint8List.fromList(iv.bytes + encrypted.bytes);
   }
 
   Uint8List decryptBytes(Uint8List bytes) {
+    final iv = IV(bytes.sublist(0, 16));
     final encryptedData = bytes.sublist(16);
-
     final encrypter = Encrypter(AES(_appSettings.encryptionKey));
+    return Uint8List.fromList(
+      encrypter.decryptBytes(Encrypted(encryptedData), iv: iv),
+    );
+  }
 
-    return Uint8List.fromList(encrypter.decryptBytes(Encrypted(encryptedData)));
+  Future<Uint8List?> getDecryptedThumbnail(PrivateAsset asset) async {
+    final hiddenDirPath = await getHiddenPath();
+    final thumbFile = File(p.join(hiddenDirPath, "${asset.id}_thumb.enc"));
+    if (!thumbFile.existsSync()) return null;
+    final encryptedThumb = thumbFile.readAsBytesSync();
+    return decryptBytes(encryptedThumb);
+  }
+
+  Future<Uint8List?> getDecryptedOriginal(PrivateAsset asset) async {
+    final hiddenDirPath = await getHiddenPath();
+    final encFile = File(p.join(hiddenDirPath, "${asset.id}.enc"));
+    if (!encFile.existsSync()) return null;
+    final encryptedData = encFile.readAsBytesSync();
+    return decryptBytes(encryptedData);
   }
 
   Future<List<PrivateAsset>> fetchByCategory(PrivateCategory category) async {
     final maps = await _db.query(
       'private_assets',
-      // where: 'category = ?',
-      // whereArgs: [category.name],
+      where: 'category = ?',
+      whereArgs: [category.name],
       orderBy: 'processed_at DESC',
     );
-    print(maps);
     return maps.map((m) => PrivateAsset.fromMap(m)).toList();
   }
 

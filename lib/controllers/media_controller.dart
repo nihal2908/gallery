@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:gallery/core/operations/operation_controller.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../core/app_settings.dart';
+import '../core/settings/app_settings.dart';
 import '../services/media_service.dart';
 import '../services/native_media_service.dart';
 import '../services/private_asset_service.dart';
@@ -215,11 +216,13 @@ class MediaController extends ChangeNotifier {
     favoriteChanged.value = !favoriteChanged.value;
   }
 
-  Future<(bool success, String? path)> convertSelectedToPDF() async {
+  Future<(bool success, String? path)> convertSelectedToPDF({
+    OperationController? op,
+  }) async {
     final selected = await getSelectedAssets();
     if (selected.isEmpty) return (false, null);
 
-    final pdfFile = await _mediaService.assetsToPdf(selected);
+    final pdfFile = await _mediaService.assetsToPdf(selected, op: op);
     if (pdfFile == null) return (false, null);
 
     clearSelection();
@@ -235,10 +238,15 @@ class MediaController extends ChangeNotifier {
     required List<AssetEntity> assets,
     required AssetPathEntity targetAlbum,
     required bool isMove,
+    OperationController? op,
   }) async {
     final List<String> idsToDelete = [];
     final relativePath = await targetAlbum.relativePathAsync;
     if (relativePath == null) return;
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = assets.length;
+    int done = 0;
 
     for (var asset in assets) {
       try {
@@ -268,6 +276,9 @@ class MediaController extends ChangeNotifier {
         if (result != null && isMove) {
           idsToDelete.add(asset.id);
         }
+
+        done++;
+        if (op != null) op.updateProgress(done, total);
       } catch (e) {
         debugPrint("Transfer failed for ${asset.id}: $e");
       }
@@ -276,6 +287,14 @@ class MediaController extends ChangeNotifier {
     if (idsToDelete.isNotEmpty) {
       await PhotoManager.editor.deleteWithIds(idsToDelete);
     }
+
+    if (op == null) return;
+    op.resultMessage = isMove
+        ? '$done item(s) moved to ${album.name} successfully.'
+        : '$done item(s) copied to ${album.name} successfully.';
+    op.status.value = OperationStatus.completed;
+
+    return;
   }
 
   void copyCurrentToAlbum(AssetPathEntity targetAlbum) async {
@@ -288,7 +307,10 @@ class MediaController extends ChangeNotifier {
     );
   }
 
-  void copySelectedToAlbum(AssetPathEntity targetAlbum) async {
+  void copySelectedToAlbum(
+    AssetPathEntity targetAlbum, {
+    OperationController? op,
+  }) async {
     final selected = await getSelectedAssets();
     await _processBatchTransfer(
       assets: selected,
@@ -306,11 +328,12 @@ class MediaController extends ChangeNotifier {
       targetAlbum: targetAlbum,
       isMove: true,
     );
-    await _handleExternalChanges();
-    notifyListeners();
   }
 
-  void moveSelectedToAlbum(AssetPathEntity targetAlbum) async {
+  void moveSelectedToAlbum(
+    AssetPathEntity targetAlbum, {
+    OperationController? op,
+  }) async {
     final selected = await getSelectedAssets();
     if (selected.isEmpty) return;
     await _processBatchTransfer(
@@ -318,7 +341,6 @@ class MediaController extends ChangeNotifier {
       targetAlbum: targetAlbum,
       isMove: true,
     );
-
     clearSelection();
   }
 
@@ -332,11 +354,11 @@ class MediaController extends ChangeNotifier {
     }
   }
 
-  Future<void> moveSelectedToTrash() async {
+  Future<void> moveSelectedToTrash({OperationController? op}) async {
     final selected = await getSelectedAssets();
     if (selected.isEmpty) return;
     if (_settings.recycleBinEnabled) {
-      await _privateService.moveToTrash(selected);
+      await _privateService.moveToTrash(selected, op: op);
     } else {
       await PhotoManager.editor.deleteWithIds(
         selected.map((e) => e.id).toList(),
@@ -353,7 +375,12 @@ class MediaController extends ChangeNotifier {
     await _privateService.moveToHidden([asset]);
   }
 
-  Future<void> hideSelected() async {}
+  Future<void> hideSelected({OperationController? op}) async {
+    final selected = await getSelectedAssets();
+    if (selected.isEmpty) return;
+    await _privateService.moveToHidden(selected, op: op);
+    clearSelection();
+  }
 
   Future<bool> setCurrentAsWallpaper() async {
     final file = await currentAsset?.originFile;

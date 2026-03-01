@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:gallery/core/operations/operation_controller.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/private_asset_model.dart';
@@ -9,6 +12,7 @@ import '../services/private_asset_service.dart';
 
 class PrivateAssetController extends ChangeNotifier {
   final PrivateAssetService _privateAssetService;
+  // ignore: unused_field
   final AuthenticationService _authService;
   final PrivateCategory category;
 
@@ -19,10 +23,72 @@ class PrivateAssetController extends ChangeNotifier {
   );
 
   List<PrivateAsset> _items = [];
-  List<PrivateAsset> get items => _items;
+  int get itemCount => _items.length;
+  PrivateAsset item(int index) => _items[index];
 
-  bool _isLoading = false;
-  bool get isLoading => _isLoading;
+  static const int pageSize = 50;
+
+  final Map<String, Uint8List> _thumbnailCache = {};
+  final Set<int> _loadingPages = {};
+
+  Future<void> init() async {
+    _items = await _privateAssetService.fetchByCategory(category);
+    notifyListeners();
+
+    _loadThumbnailPage(0);
+  }
+
+  void refresh() async {
+    _items = await _privateAssetService.fetchByCategory(category);
+    notifyListeners();
+  }
+
+  void _loadThumbnailPage(int page) {
+    if (_loadingPages.contains(page)) return;
+
+    _loadingPages.add(page);
+
+    final start = page * pageSize;
+    final end = (start + pageSize).clamp(0, _items.length);
+
+    if (start >= end) {
+      _loadingPages.remove(page);
+      return;
+    }
+
+    final slice = _items.sublist(start, end);
+
+    _preloadThumbnails(slice, page);
+  }
+
+  Future<void> _preloadThumbnails(List<PrivateAsset> assets, int page) async {
+    await Future.wait(
+      assets.map((asset) async {
+        if (_thumbnailCache.containsKey(asset.id)) return;
+
+        final bytes = await _privateAssetService.getDecryptedThumbnail(asset);
+        if (bytes == null) return;
+
+        _thumbnailCache[asset.id] = bytes;
+      }),
+    );
+
+    _loadingPages.remove(page);
+    notifyListeners();
+  }
+
+  void _onItemBuilt(int index) {
+    final page = index ~/ pageSize;
+    _loadThumbnailPage(page);
+    _loadThumbnailPage(page + 1);
+  }
+
+  Uint8List? getThumbnailAt(int index) {
+    _onItemBuilt(index);
+    final thumbnail = _thumbnailCache[_items[index].id];
+    if (thumbnail == null) return null;
+    return thumbnail;
+  }
 
   Set<PrivateAsset> _selectedItems = {};
   ValueNotifier<bool> isSelectionMode = ValueNotifier(false);
@@ -32,9 +98,14 @@ class PrivateAssetController extends ChangeNotifier {
   bool get hasSelection => selectedCount.value > 0;
 
   void toggleSelection(PrivateAsset item) {
-    _selectedItems.add(item);
+    if (_selectedItems.contains(item)) {
+      _selectedItems.remove(item);
+      selectedCount.value--;
+    } else {
+      _selectedItems.add(item);
+      selectedCount.value++;
+    }
     isSelectionMode.value = true;
-    selectedCount.value++;
   }
 
   void enterSelectionMode() {
@@ -60,42 +131,37 @@ class PrivateAssetController extends ChangeNotifier {
   List<PrivateAsset> get selectedItems => _selectedItems.toList();
   bool isSelected(PrivateAsset item) => _selectedItems.contains(item);
 
-  Future<void> restoreSelected() async {
-    await restore(selectedItems);
+  Future<void> restoreCurrent() async {
+    await _restore([currentItem]);
+  }
+
+  Future<void> restoreSelected({OperationController? op}) async {
+    await _restore(selectedItems, op: op);
     clearSelections();
   }
 
-  Future<void> unhideSelected() async {
-    await unhide(selectedItems);
+  Future<void> unhideCurrent() async {
+    await _unhide([currentItem]);
+  }
+
+  Future<void> unhideSelected({OperationController? op}) async {
+    await _unhide(selectedItems, op: op);
     clearSelections();
   }
 
-  Future<void> permanentlyDeleteSelected() async {
-    await permanentlyDelete(selectedItems);
+  Future<void> permanentlyDeleteCurrent() async {
+    await _permanentlyDelete([currentItem]);
+  }
+
+  Future<void> permanentlyDeleteSelected({OperationController? op}) async {
+    await _permanentlyDelete(selectedItems, op: op);
     clearSelections();
   }
 
   ValueNotifier<int> currentIndex = ValueNotifier(0);
   set setCurrentIndex(int index) => currentIndex.value = index;
 
-  PrivateAsset get currentItem => items[currentIndex.value];
-
-  Future<void> loadTrash() async {
-    _isLoading = true;
-    notifyListeners();
-    _items = await _privateAssetService.fetchByCategory(PrivateCategory.trash);
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  Future<void> loadHidden() async {
-    _isLoading = true;
-    notifyListeners();
-
-    _items = await _privateAssetService.fetchByCategory(PrivateCategory.hidden);
-    _isLoading = false;
-    notifyListeners();
-  }
+  PrivateAsset get currentItem => _items[currentIndex.value];
 
   Future<File?> getFile(PrivateAsset item) async {
     final trashDirPath = await _privateAssetService.getTrashPath();
@@ -104,8 +170,16 @@ class PrivateAssetController extends ChangeNotifier {
     return null;
   }
 
-  Future<void> unhide(List<PrivateAsset> items) async {
+  Future<void> _unhide(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
     final hiddenDirPath = await _privateAssetService.getHiddenPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = items.length;
+    int done = 0;
+
     for (final item in items) {
       final file = item.getLocalFile(hiddenDirPath);
 
@@ -139,12 +213,25 @@ class PrivateAssetController extends ChangeNotifier {
         await file.delete();
         await _privateAssetService.deleteFromDb(item.id);
       }
-      await loadHidden();
-    }
-  } 
 
-  Future<void> restore(List<PrivateAsset> items) async {
+      done++;
+      if (op != null) op.updateProgress(done, total);
+    }
+    if (op != null) op.resultMessage = '$done item(s) unhidden successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
+    refresh();
+  }
+
+  Future<void> _restore(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
     final trashDirPath = await _privateAssetService.getTrashPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = items.length;
+    int done = 0;
+
     for (final item in items) {
       final file = item.getLocalFile(trashDirPath);
 
@@ -178,18 +265,37 @@ class PrivateAssetController extends ChangeNotifier {
         await file.delete();
         await _privateAssetService.deleteFromDb(item.id);
       }
-      await loadTrash();
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
     }
+    if (op != null) op.resultMessage = '$done item(s) restored successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
+    refresh();
   }
 
-  Future<void> permanentlyDelete(List<PrivateAsset> items) async {
+  Future<void> _permanentlyDelete(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
     final trashDirPath = await _privateAssetService.getTrashPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = items.length;
+    int done = 0;
+
     for (final item in items) {
       final file = item.getLocalFile(trashDirPath);
       if (await file.exists()) await file.delete();
 
       await _privateAssetService.deleteFromDb(item.id);
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
     }
-    await loadTrash();
+
+    if (op != null) op.resultMessage = '$done item(s) deleted successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
+    refresh();
   }
 }

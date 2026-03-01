@@ -2,7 +2,7 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'controllers/albums_controller.dart';
-import 'core/app_settings.dart';
+import 'core/settings/app_settings.dart';
 import 'services/authentication_service.dart';
 import 'services/media_service.dart';
 import 'services/native_media_service.dart';
