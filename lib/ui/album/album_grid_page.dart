@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:photo_manager/photo_manager.dart';
 
 import '../../controllers/albums_controller.dart';
 import '../../dependency_injector.dart';
@@ -17,12 +16,10 @@ enum AlbumGridMode {
 
 class AlbumGridPage extends StatefulWidget {
   final AlbumGridMode mode;
-  final ValueChanged<AssetPathEntity>? onAlbumPicked;
   final String? title;
   const AlbumGridPage({
     super.key,
     this.mode = AlbumGridMode.browse,
-    this.onAlbumPicked,
     this.title,
   });
 
@@ -136,8 +133,7 @@ class _AlbumGridPageState extends State<AlbumGridPage> {
                   album: controller.albums[index],
                   onTap: () {
                     if (widget.mode == AlbumGridMode.pick) {
-                      widget.onAlbumPicked?.call(controller.albums[index]);
-                      Navigator.pop(context);
+                      Navigator.pop(context, controller.albums[index]);
                     } else {
                       Navigator.push(
                         context,

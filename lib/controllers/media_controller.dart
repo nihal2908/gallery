@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
-import 'package:gallery/core/operations/operation_controller.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
+import './../core/operations/operation_controller.dart';
 import '../core/settings/app_settings.dart';
 import '../services/media_service.dart';
 import '../services/native_media_service.dart';
@@ -69,10 +69,6 @@ class MediaController extends ChangeNotifier {
     album = updatedAlbum;
     _handleExternalChanges();
   }
-
-  // void _onMediaChanged(MethodCall _) async {
-  //   await _handleExternalChanges();
-  // }
 
   Future<void> _handleExternalChanges() async {
     await album.fetchPathProperties();
@@ -216,17 +212,21 @@ class MediaController extends ChangeNotifier {
     favoriteChanged.value = !favoriteChanged.value;
   }
 
-  Future<(bool success, String? path)> convertSelectedToPDF({
+  Future<void> convertSelectedToPDF({
+    String? filename,
     OperationController? op,
   }) async {
     final selected = await getSelectedAssets();
-    if (selected.isEmpty) return (false, null);
+    if (selected.isEmpty) return;
 
-    final pdfFile = await _mediaService.assetsToPdf(selected, op: op);
-    if (pdfFile == null) return (false, null);
+    final pdfFile = await _mediaService.assetsToPdf(
+      selected,
+      fileName: filename,
+      op: op,
+    );
+    if (pdfFile == null) return;
 
     clearSelection();
-    return (true, pdfFile.path);
   }
 
   void sharePDF(pdfFilePath) async {
@@ -297,7 +297,7 @@ class MediaController extends ChangeNotifier {
     return;
   }
 
-  void copyCurrentToAlbum(AssetPathEntity targetAlbum) async {
+  Future<void> copyCurrentToAlbum(AssetPathEntity targetAlbum) async {
     final asset = currentAsset;
     if (asset == null) return;
     await _processBatchTransfer(
@@ -307,7 +307,7 @@ class MediaController extends ChangeNotifier {
     );
   }
 
-  void copySelectedToAlbum(
+  Future<void> copySelectedToAlbum(
     AssetPathEntity targetAlbum, {
     OperationController? op,
   }) async {
@@ -320,7 +320,7 @@ class MediaController extends ChangeNotifier {
     clearSelection();
   }
 
-  void moveCurrentToAlbum(AssetPathEntity targetAlbum) async {
+  Future<void> moveCurrentToAlbum(AssetPathEntity targetAlbum) async {
     final asset = currentAsset;
     if (asset == null) return;
     await _processBatchTransfer(
@@ -330,7 +330,7 @@ class MediaController extends ChangeNotifier {
     );
   }
 
-  void moveSelectedToAlbum(
+  Future<void> moveSelectedToAlbum(
     AssetPathEntity targetAlbum, {
     OperationController? op,
   }) async {

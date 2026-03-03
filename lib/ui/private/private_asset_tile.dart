@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:gallery/models/private_asset_model.dart';
+import '/models/private_asset_model.dart';
 
 class PrivateAssetTile extends StatelessWidget {
   final PrivateAsset item;

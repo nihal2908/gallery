@@ -1,14 +1,14 @@
-// services/media_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:gallery/core/operations/operation_controller.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart' as path_provider;
 
-class MediaService {
+import './../core/operations/operation_controller.dart';
 
+class MediaService {
   Future<bool> requestPermission() async {
     final ps = await PhotoManager.requestPermissionExtend();
     if (!ps.isAuth && !ps.hasAccess) {
@@ -40,10 +40,16 @@ class MediaService {
       where: "is_favorite = 1",
       orderBy: [OrderByItem(CustomColumns.android.generationAdded, false)],
     );
-
-    List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
-      filterOption: favoriteFilter,
-    );
+    List<AssetPathEntity> albums = [];
+    try {
+      albums = await PhotoManager.getAssetPathList(
+        filterOption: favoriteFilter,
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        print(error.toString());
+      }
+    }
 
     return albums.isNotEmpty ? albums.first.copyWith(name: 'Favorites') : null;
   }
@@ -65,6 +71,7 @@ class MediaService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       fileName = 'DOC_$timestamp.pdf';
     }
+    fileName = "$fileName.pdf";
 
     final pdf = pw.Document();
 

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:gallery/ui/private/password_entry_page.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import './../../core/operations/operation_controller.dart';
+import './../../ui/private/password_entry_page.dart';
 import '../../controllers/albums_controller.dart';
 import '../../controllers/media_controller.dart';
 import '../../core/operations/operation_dialog.dart';
@@ -94,9 +95,7 @@ class _MediaGridPageState extends State<MediaGridPage> {
               if (controller.isSelectionMode.value)
                 IconButton(
                   icon: const Icon(Icons.delete),
-                  onPressed: () {
-                    _showDeleteDialog(context);
-                  },
+                  onPressed: _showDeleteDialog,
                 ),
               // more options
               PopupMenuButton(
@@ -115,47 +114,46 @@ class _MediaGridPageState extends State<MediaGridPage> {
                   // convert to pdf
                   if (!controller.isNoSelected)
                     PopupMenuItem(
+                      onTap: _showGeneratePDFDialog,
                       child: Text('Generate PDF'),
-                      onTap: () async {
-                        controller.convertSelectedToPDF().then(
-                          (value) => _showPDFResultDialog(context, value),
-                        );
-                      },
                     ),
                   // copy to album
                   if (!controller.isNoSelected)
                     PopupMenuItem(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AlbumGridPage(
-                            mode: AlbumGridMode.pick,
-                            title: 'Copy to album',
-                            onAlbumPicked: (album) => _showCopyToAlbumDialog(album),
+                      onTap: () async {
+                        final album = await Navigator.push<AssetPathEntity>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AlbumGridPage(
+                              mode: AlbumGridMode.pick,
+                              title: 'Copy to album',
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                        if (album != null) _showCopyToAlbumDialog(album);
+                      },
                       child: Text('Copy to Album'),
                     ),
                   // move to album
                   if (!controller.isNoSelected)
                     PopupMenuItem(
                       child: Text('Move to Album'),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AlbumGridPage(
-                            mode: AlbumGridMode.pick,
-                            title: 'Move to album',
-                            onAlbumPicked: (album) => _showMoveToAlbumDialog(album),
+                      onTap: () async {
+                        final album = await Navigator.push<AssetPathEntity>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AlbumGridPage(
+                              mode: AlbumGridMode.pick,
+                              title: 'Move to album',
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                        if (album != null) _showMoveToAlbumDialog(album);
+                      },
                     ),
                   // hide button
                   if (!controller.isNoSelected)
-                    PopupMenuItem(
-                      onTap: _showHideDialog,
-                      child: Text('Hide'),
-                    ),
+                    PopupMenuItem(onTap: _showHideDialog, child: Text('Hide')),
                 ],
               ),
             ],
@@ -191,87 +189,195 @@ class _MediaGridPageState extends State<MediaGridPage> {
     );
   }
 
-  void _showPDFResultDialog(BuildContext context, (bool, String?) result) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: result.$1
-              ? const Text('PDF created successfully!')
-              : const Text('PDF creation failed!'),
-          content: result.$1
-              ? Text('The file is saved at "${result.$2}".')
-              : const Text("Please try again later"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: result.$1
-                  ? () {
-                      Navigator.of(context).pop();
-                      controller.sharePDF(result.$2);
-                    }
-                  : null,
-              child: const Text('Share'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  void _showGeneratePDFDialog() {
+    final op = OperationController();
+    final filenameController = TextEditingController();
 
-  void _showDeleteDialog(BuildContext context) async {
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete selected items?'),
-          content: controller.recycleBinEnabled
-              ? Text('The items will be visible in recycle bin.')
-              : const Text(
-                  "The items will be permanently removed from device.",
-                ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                controller.moveSelectedToTrash();
-                Navigator.pop(context);
-              },
-              child: const Text('Delete'),
-            ),
-          ],
+        return Dialog(
+          child: ValueListenableBuilder(
+            valueListenable: op.status,
+            builder: (_, status, __) {
+              if (status == OperationStatus.idle) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Generate PDF from ${controller.selectedCount.value} item(s)?',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: filenameController,
+                      decoration: InputDecoration(
+                        hintText: 'Enter filename (optional)',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            op.start();
+                            controller.convertSelectedToPDF(
+                              filename: filenameController.text.trim(),
+                            );
+                          },
+                          child: Text('Generate'),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              if (status == OperationStatus.running) {
+                return StreamBuilder<OperationProgress>(
+                  stream: op.progressStream,
+                  builder: (_, snapshot) {
+                    final progress = snapshot.data;
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text("Processing..."),
+                        const SizedBox(height: 20),
+                        LinearProgressIndicator(
+                          value: progress == null ? 0 : progress.percent,
+                        ),
+                        const SizedBox(height: 10),
+                        if (progress != null)
+                          Text("${progress.done}/${progress.total}"),
+                      ],
+                    );
+                  },
+                );
+              }
+
+              if (status == OperationStatus.completed) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 50,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(op.resultMessage ?? "Completed"),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            op.dispose();
+                          },
+                          child: const Text("Close"),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            op.dispose();
+                            controller.sharePDF(op.resultMessage);
+                          },
+                          child: const Text("Share"),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error, color: Colors.red, size: 50),
+                  const SizedBox(height: 10),
+                  Text(op.errorMessage ?? "Operation failed"),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      op.dispose();
+                    },
+                    child: const Text("Close"),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
   }
 
   void _showCopyToAlbumDialog(AssetPathEntity album) {
-
+    showOperationDialog(
+      context: context,
+      title: 'Copy ${controller.selectedCount.value} item(s) to ${album.name}?',
+      confirmText: 'Copy',
+      description: 'A copy of items will be saved to the new album.',
+      onConfirm: (op) => controller.copySelectedToAlbum(album, op: op),
+    );
   }
 
   void _showMoveToAlbumDialog(AssetPathEntity album) {
-
+    showOperationDialog(
+      context: context,
+      title: 'Move ${controller.selectedCount.value} item(s) to ${album.name}?',
+      confirmText: 'Move',
+      description:
+          'A copy of items will be saved to the new album and old one will be deleted.',
+      onConfirm: (op) => controller.moveSelectedToAlbum(album, op: op),
+    );
   }
+
   void _showHideDialog() {
     showOperationDialog(
       context: context,
       title: 'Hide ${controller.selectedCount.value} item(s)?',
       confirmText: 'Hide',
       description: 'These items can be seen from Settings > Hidden Album.',
-      onConfirm: (op) => controller.hideSelected(op: op),
+      onConfirm: (op) async {
+        final correctPassword = await controller.hasPassword()
+            ? await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PasswordEntryPage(
+                    mode: PasswordEntryPageMode.checkPassword,
+                  ),
+                ),
+              )
+            : await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PasswordEntryPage(
+                    mode: PasswordEntryPageMode.setPassword,
+                  ),
+                ),
+              );
+        if (correctPassword == null) return;
+        if (correctPassword) controller.hideSelected(op: op);
+      },
     );
   }
-  void _showMoveToTrashDialog() {
 
+  void _showDeleteDialog() {
+    showOperationDialog(
+      context: context,
+      title: 'Delete ${controller.selectedCount.value} item(s)?',
+      confirmText: 'Delete',
+      description: controller.recycleBinEnabled
+          ? 'The items will be visible in recycle bin.'
+          : 'The items will be permanently removed from device.',
+      onConfirm: (op) => controller.moveSelectedToTrash(op: op),
+    );
   }
 }

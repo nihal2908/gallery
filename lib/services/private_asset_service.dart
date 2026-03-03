@@ -1,13 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
-import 'package:gallery/core/operations/operation_controller.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../core/operations/operation_controller.dart';
 import '../core/settings/app_settings.dart';
 import '../models/private_asset_model.dart';
 import 'authentication_service.dart';

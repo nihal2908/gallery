@@ -242,32 +242,38 @@ class _BottomBar extends StatelessWidget {
                               child: Text('Set as Wallpaper'),
                             ),
                             PopupMenuItem(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AlbumGridPage(
-                                      mode: AlbumGridMode.pick,
-                                      onAlbumPicked:
-                                          controller.copyCurrentToAlbum,
-                                    ),
-                                  ),
-                                );
+                              onTap: () async {
+                                final album =
+                                    await Navigator.push<AssetPathEntity>(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => AlbumGridPage(
+                                          mode: AlbumGridMode.pick,
+                                          title: 'Copy to album',
+                                        ),
+                                      ),
+                                    );
+                                if (album != null) {
+                                  controller.copyCurrentToAlbum(album);
+                                }
                               },
                               child: Text('Copy to Album'),
                             ),
                             PopupMenuItem(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AlbumGridPage(
-                                      mode: AlbumGridMode.pick,
-                                      onAlbumPicked:
-                                          controller.moveCurrentToAlbum,
-                                    ),
-                                  ),
-                                );
+                              onTap: () async {
+                                final album =
+                                    await Navigator.push<AssetPathEntity>(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => AlbumGridPage(
+                                          mode: AlbumGridMode.pick,
+                                          title: 'Move to album',
+                                        ),
+                                      ),
+                                    );
+                                if (album != null) {
+                                  controller.moveCurrentToAlbum(album);
+                                }
                               },
                               child: Text('Move to Album'),
                             ),

@@ -95,7 +95,7 @@ class _OperationDialogContent extends StatelessWidget {
                 children: [
                   const Text("Processing..."),
                   const SizedBox(height: 20),
-                  LinearProgressIndicator(value: progress?.percent),
+                  LinearProgressIndicator(value: progress == null ? 0 : progress.percent),
                   const SizedBox(height: 10),
                   if (progress != null)
                     Text("${progress.done}/${progress.total}"),

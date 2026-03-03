@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:gallery/services/authentication_service.dart';
 
+import '../../services/authentication_service.dart';
 import '../../controllers/private_asset_controller.dart';
 import '../../core/operations/operation_dialog.dart';
 import '../../dependency_injector.dart';
