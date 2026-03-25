@@ -1,14 +1,23 @@
+import 'dart:typed_data';
+
+import 'package:chewie/chewie.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:gallery/models/private_asset_model.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../controllers/private_asset_controller.dart';
 
 class PrivateAssetViewPage extends StatefulWidget {
+  final Uint8List? thumbnail;
   final PrivateAssetController controller;
 
-  const PrivateAssetViewPage({super.key, required this.controller});
+  const PrivateAssetViewPage({
+    super.key,
+    required this.thumbnail,
+    required this.controller,
+  });
 
   @override
   State<PrivateAssetViewPage> createState() => _PrivateAssetViewPageState();
@@ -36,79 +45,118 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
         final currentIndex = controller.currentIndex.value;
         return Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            title: controller.isSelectionMode.value
-                ? Text('${controller.selectedCount.value} selected')
-                : Text(
-                    '${controller.currentIndex.value + 1}/${controller.itemCount}',
-                  ),
-            actions: [
-              if (controller.category == PrivateCategory.trash &&
-                  !controller.isSelectionMode.value)
-                IconButton(
-                  onPressed: () {
-                    _showRestoreConfirmation();
-                  },
-                  icon: Icon(Icons.restore),
-                ),
-              if (controller.category == PrivateCategory.hidden &&
-                  !controller.isSelectionMode.value)
-                IconButton(
-                  onPressed: () {
-                    _showUnhideConfirmation();
-                  },
-                  icon: Icon(Icons.visibility),
-                ),
-              if (!controller.isSelectionMode.value)
-                IconButton(
-                  onPressed: () {
-                    _showDeleteConfirmation();
-                  },
-                  icon: Icon(Icons.delete),
-                ),
-
-              if (controller.isSelectionMode.value)
-                IconButton(
-                  onPressed: () {
-                    controller.toggleSelection(controller.currentItem);
-                  },
-                  icon: controller.isSelected(controller.currentItem)
-                      ? Icon(Icons.check_box)
-                      : Icon(Icons.check_box_outline_blank),
-                ),
-            ],
-          ),
           body: Stack(
             alignment: AlignmentGeometry.center,
             children: [
-              PhotoViewGestureDetectorScope(
-                axis: Axis.horizontal,
-                child: PageView.builder(
-                  controller: PageController(initialPage: currentIndex),
-                  onPageChanged: (i) {
-                    controller.setCurrentIndex = i;
-                  },
-                  dragStartBehavior: DragStartBehavior.down,
-                  pageSnapping: true,
-                  itemCount: controller.itemCount,
-                  itemBuilder: (_, index) {
-                    // final item = controller.items[index];
-                    // return item.type == AssetMediaType.image
-                    //     ? ImageViewer(asset: item)
-                    //     : VideoViewer(asset: item);
-                    return null;
-                  },
+              GestureDetector(
+                onTap: () {
+                  controller.toggleControls();
+                },
+                child: PhotoViewGestureDetectorScope(
+                  axis: Axis.horizontal,
+                  child: PageView.builder(
+                    controller: PageController(initialPage: currentIndex),
+                    onPageChanged: (i) {
+                      controller.setCurrentIndex = i;
+                    },
+                    dragStartBehavior: DragStartBehavior.down,
+                    pageSnapping: true,
+                    itemCount: controller.itemCount,
+                    itemBuilder: (_, index) {
+                      final item = controller.item(index);
+                      return item.type == AssetMediaType.image
+                          ? _ImageViewer(
+                              controller: controller,
+                              item: item,
+                              thumbnail: widget.thumbnail,
+                            )
+                          : _VideoViewer(
+                              controller: controller,
+                              item: item,
+                              thumbnail: widget.thumbnail,
+                            );
+                    },
+                  ),
                 ),
               ),
+              _TopBar(controller: controller),
             ],
           ),
         );
       },
     );
   }
+}
 
-  void _showDeleteConfirmation() {
+class _TopBar extends StatelessWidget {
+  final PrivateAssetController controller;
+  const _TopBar({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        controller.showControls,
+        controller.currentIndex,
+        controller.selectedCount,
+      ]),
+      builder: (_, __) {
+        return controller.showControls.value
+            ? Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: AppBar(
+                  title: controller.isSelectionMode.value
+                      ? Text('${controller.selectedCount.value} selected')
+                      : Text(
+                          '${controller.currentIndex.value + 1}/${controller.itemCount}',
+                        ),
+                  actions: [
+                    if (controller.category == PrivateCategory.trash &&
+                        !controller.isSelectionMode.value)
+                      IconButton(
+                        onPressed: () {
+                          _showRestoreConfirmation(context);
+                        },
+                        icon: Icon(Icons.restore),
+                      ),
+                    if (controller.category == PrivateCategory.hidden &&
+                        !controller.isSelectionMode.value)
+                      IconButton(
+                        onPressed: () {
+                          _showUnhideConfirmation(context);
+                        },
+                        icon: Icon(Icons.visibility),
+                      ),
+                    if (!controller.isSelectionMode.value)
+                      IconButton(
+                        onPressed: () {
+                          _showDeleteConfirmation(context);
+                        },
+                        icon: Icon(Icons.delete),
+                      ),
+
+                    if (controller.isSelectionMode.value)
+                      IconButton(
+                        onPressed: () {
+                          controller.toggleSelection(controller.currentItem);
+                        },
+                        icon: controller.isSelected(controller.currentItem)
+                            ? Icon(Icons.check_box)
+                            : Icon(Icons.check_box_outline_blank),
+                      ),
+                  ],
+                ),
+              )
+            : SizedBox.shrink();
+      },
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
     showDialog(
+      barrierDismissible: false,
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete item?'),
@@ -130,8 +178,9 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
     );
   }
 
-  void _showUnhideConfirmation() {
+  void _showUnhideConfirmation(BuildContext context) {
     showDialog(
+      barrierDismissible: false,
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Unhide this item?'),
@@ -142,8 +191,8 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
             child: Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              controller.unhideCurrent();
+            onPressed: () async {
+              await controller.unhideCurrent();
               Navigator.pop(context);
             },
             child: Text('Unhide'),
@@ -153,8 +202,9 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
     );
   }
 
-  void _showRestoreConfirmation() {
+  void _showRestoreConfirmation(BuildContext context) {
     showDialog(
+      barrierDismissible: false,
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Restore this item?'),
@@ -165,8 +215,8 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
             child: Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              controller.restoreCurrent();
+            onPressed: () async {
+              await controller.restoreCurrent();
               Navigator.pop(context);
             },
             child: Text('Restore'),
@@ -174,5 +224,119 @@ class _PrivateAssetViewPageState extends State<PrivateAssetViewPage> {
         ],
       ),
     );
+  }
+}
+
+class _ImageViewer extends StatefulWidget {
+  final PrivateAssetController controller;
+  final PrivateAsset item;
+  final Uint8List? thumbnail;
+
+  const _ImageViewer({
+    required this.item,
+    this.thumbnail,
+    required this.controller,
+  });
+
+  @override
+  State<_ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<_ImageViewer> {
+  Uint8List? _imageBytes;
+
+  @override
+  void initState() {
+    _loadImage();
+    super.initState();
+  }
+
+  Future<void> _loadImage() async {
+    final bytes = await widget.controller.getCompleteImage(widget.item);
+    setState(() {
+      _imageBytes = bytes;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PhotoView.customChild(
+      minScale: PhotoViewComputedScale.contained,
+      maxScale: PhotoViewComputedScale.covered * 5,
+      child: _imageBytes != null
+          ? Image.memory(_imageBytes!, fit: BoxFit.contain)
+          : Image.memory(widget.thumbnail!, fit: BoxFit.cover),
+    );
+  }
+}
+
+class _VideoViewer extends StatefulWidget {
+  final PrivateAssetController controller;
+  final PrivateAsset item;
+  final Uint8List? thumbnail;
+
+  const _VideoViewer({
+    required this.item,
+    this.thumbnail,
+    required this.controller,
+  });
+
+  @override
+  State<_VideoViewer> createState() => _VideoViewerState();
+}
+
+class _VideoViewerState extends State<_VideoViewer> {
+  VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
+  Uint8List? _preview;
+
+  Future<void> _loadPreview() async {
+    _preview = await widget.controller.getVideoPreview(widget.item);
+    setState(() {});
+  }
+
+  Future<void> _loadVideo() async {
+    final file = await widget.controller.getCompleteVideoFile(widget.item);
+    if (file == null) return;
+    _videoController = VideoPlayerController.file(file);
+    await _videoController!.initialize();
+
+    _chewieController = ChewieController(
+      videoPlayerController: _videoController!,
+      looping: true,
+      allowFullScreen: false,
+      allowPlaybackSpeedChanging: true,
+      zoomAndPan: true,
+    );
+
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    _loadPreview();
+    _loadVideo();
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black,
+      child: Center(
+        child: _chewieController != null
+            ? Chewie(controller: _chewieController!)
+            : _preview != null
+            ? Image.memory(_preview!, fit: BoxFit.cover)
+            : Image.memory(widget.thumbnail!, fit: BoxFit.cover),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _chewieController?.dispose();
+    _videoController?.dispose();
+    super.dispose();
   }
 }

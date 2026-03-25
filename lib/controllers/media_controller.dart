@@ -74,8 +74,6 @@ class MediaController extends ChangeNotifier {
     await album.fetchPathProperties();
 
     final newCount = await album.assetCountAsync;
-    // print(newCount);
-    // print(assetCount.value);
 
     if (newCount != assetCount.value) {
       assetCount.value = newCount;
@@ -297,14 +295,24 @@ class MediaController extends ChangeNotifier {
     return;
   }
 
+  bool _copying = false;
   Future<void> copyCurrentToAlbum(AssetPathEntity targetAlbum) async {
+    if (_copying) return;
+    _copying = true;
     final asset = currentAsset;
-    if (asset == null) return;
-    await _processBatchTransfer(
-      assets: [asset],
-      targetAlbum: targetAlbum,
-      isMove: false,
-    );
+    if (asset == null) {
+      _copying = false;
+      return;
+    }
+    try {
+      await _processBatchTransfer(
+        assets: [asset],
+        targetAlbum: targetAlbum,
+        isMove: false,
+      );
+    } finally {
+      _copying = false;
+    }
   }
 
   Future<void> copySelectedToAlbum(
@@ -320,14 +328,24 @@ class MediaController extends ChangeNotifier {
     clearSelection();
   }
 
+  bool _moving = false;
   Future<void> moveCurrentToAlbum(AssetPathEntity targetAlbum) async {
+    if (_moving) return;
+    _moving = true;
     final asset = currentAsset;
-    if (asset == null) return;
-    await _processBatchTransfer(
-      assets: [asset],
-      targetAlbum: targetAlbum,
-      isMove: true,
-    );
+    if (asset == null) {
+      _moving = false;
+      return;
+    }
+    try {
+      await _processBatchTransfer(
+        assets: [asset],
+        targetAlbum: targetAlbum,
+        isMove: true,
+      );
+    } finally {
+      _moving = false;
+    }
   }
 
   Future<void> moveSelectedToAlbum(
@@ -346,11 +364,27 @@ class MediaController extends ChangeNotifier {
 
   bool get recycleBinEnabled => _settings.recycleBinEnabled;
 
+  bool _deleting = false;
   Future<void> moveCurrentToTrash() async {
+    if (_deleting) return;
+    _deleting = true;
+    final asset = currentAsset;
+    if (asset == null) {
+      _deleting = false;
+      return;
+    }
     if (_settings.recycleBinEnabled) {
-      await _privateService.moveToTrash([currentAsset!]);
+      try {
+        await _privateService.moveToTrash([asset]);
+      } finally {
+        _deleting = false;
+      }
     } else {
-      await PhotoManager.editor.deleteWithIds([currentAsset!.id]);
+      try {
+        await PhotoManager.editor.deleteWithIds([asset.id]);
+      } finally {
+        _deleting = false;
+      }
     }
   }
 
@@ -369,10 +403,20 @@ class MediaController extends ChangeNotifier {
 
   Future<bool> hasPassword() async => _privateService.hasPassword();
 
+  bool _hiding = false;
   Future<void> hideCurrent() async {
+    if (_hiding) return;
+    _hiding = true;
     final asset = currentAsset;
-    if (asset == null) return;
-    await _privateService.moveToHidden([asset]);
+    if (asset == null) {
+      _hiding = false;
+      return;
+    }
+    try {
+      await _privateService.moveToHidden([asset]);
+    } finally {
+      _hiding = false;
+    }
   }
 
   Future<void> hideSelected({OperationController? op}) async {

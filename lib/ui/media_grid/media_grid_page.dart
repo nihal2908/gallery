@@ -194,124 +194,129 @@ class _MediaGridPageState extends State<MediaGridPage> {
     final filenameController = TextEditingController();
 
     showDialog(
+      barrierDismissible: false,
       context: context,
       builder: (context) {
         return Dialog(
-          child: ValueListenableBuilder(
-            valueListenable: op.status,
-            builder: (_, status, __) {
-              if (status == OperationStatus.idle) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Generate PDF from ${controller.selectedCount.value} item(s)?',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: filenameController,
-                      decoration: InputDecoration(
-                        hintText: 'Enter filename (optional)',
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: ValueListenableBuilder(
+              valueListenable: op.status,
+              builder: (_, status, __) {
+                if (status == OperationStatus.idle) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Generate PDF from ${controller.selectedCount.value} item(s)?',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: filenameController,
+                        decoration: InputDecoration(
+                          hintText: 'Enter filename (optional)',
                         ),
-                        TextButton(
-                          onPressed: () async {
-                            op.start();
-                            controller.convertSelectedToPDF(
-                              filename: filenameController.text.trim(),
-                            );
-                          },
-                          child: Text('Generate'),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              }
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text("Cancel"),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              op.start();
+                              controller.convertSelectedToPDF(
+                                filename: filenameController.text.trim(),
+                                op: op,
+                              );
+                            },
+                            child: Text('Generate'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                }
 
-              if (status == OperationStatus.running) {
-                return StreamBuilder<OperationProgress>(
-                  stream: op.progressStream,
-                  builder: (_, snapshot) {
-                    final progress = snapshot.data;
+                if (status == OperationStatus.running) {
+                  return StreamBuilder<OperationProgress>(
+                    stream: op.progressStream,
+                    builder: (_, snapshot) {
+                      final progress = snapshot.data;
 
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text("Processing..."),
-                        const SizedBox(height: 20),
-                        LinearProgressIndicator(
-                          value: progress == null ? 0 : progress.percent,
-                        ),
-                        const SizedBox(height: 10),
-                        if (progress != null)
-                          Text("${progress.done}/${progress.total}"),
-                      ],
-                    );
-                  },
-                );
-              }
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text("Processing..."),
+                          const SizedBox(height: 20),
+                          LinearProgressIndicator(
+                            value: progress == null ? 0 : progress.percent,
+                          ),
+                          const SizedBox(height: 10),
+                          if (progress != null)
+                            Text("${progress.done}/${progress.total}"),
+                        ],
+                      );
+                    },
+                  );
+                }
 
-              if (status == OperationStatus.completed) {
+                if (status == OperationStatus.completed) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 50,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(op.resultMessage ?? "Completed"),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              op.dispose();
+                            },
+                            child: const Text("Close"),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              op.dispose();
+                              controller.sharePDF(op.resultMessage);
+                            },
+                            child: const Text("Share"),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                      size: 50,
-                    ),
+                    const Icon(Icons.error, color: Colors.red, size: 50),
                     const SizedBox(height: 10),
-                    Text(op.resultMessage ?? "Completed"),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            op.dispose();
-                          },
-                          child: const Text("Close"),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            op.dispose();
-                            controller.sharePDF(op.resultMessage);
-                          },
-                          child: const Text("Share"),
-                        ),
-                      ],
+                    Text(op.errorMessage ?? "Operation failed"),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        op.dispose();
+                      },
+                      child: const Text("Close"),
                     ),
                   ],
                 );
-              }
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error, color: Colors.red, size: 50),
-                  const SizedBox(height: 10),
-                  Text(op.errorMessage ?? "Operation failed"),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      op.dispose();
-                    },
-                    child: const Text("Close"),
-                  ),
-                ],
-              );
-            },
+              },
+            ),
           ),
         );
       },

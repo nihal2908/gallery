@@ -104,7 +104,7 @@ class PrivateAsset {
 
   // Helper to get the local file in the app's internal trash folder
   File getLocalFile(String trashDirPath) {
-    return File('$trashDirPath/$id');
+    return File('$trashDirPath/$id.enc');
   }
 
   @override

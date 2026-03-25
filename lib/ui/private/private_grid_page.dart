@@ -131,7 +131,7 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
-                            PrivateAssetViewPage(controller: controller),
+                            PrivateAssetViewPage(thumbnail: thumbnail, controller: controller),
                       ),
                     );
                   }

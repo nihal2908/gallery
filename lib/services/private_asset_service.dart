@@ -1,10 +1,11 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:encrypt/encrypt.dart';
+import 'package:flutter/services.dart';
+import 'package:gallery/services/native_crypto_service.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:photo_manager/photo_manager.dart';
+import 'package:pointycastle/export.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../core/operations/operation_controller.dart';
@@ -60,7 +61,7 @@ class PrivateAssetService {
       whereArgs: [PrivateCategory.trash.name, cutoff],
     );
 
-    final trashPath = await getTrashPath();
+    final trashPath = await _getTrashPath();
 
     for (final item in expired) {
       final id = item['id'] as String;
@@ -81,7 +82,7 @@ class PrivateAssetService {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  Future<String> getTrashPath() async {
+  Future<String> _getTrashPath() async {
     if (_cachedTrashPath != null) return _cachedTrashPath!;
     final directory = await getApplicationDocumentsDirectory();
     _cachedTrashPath = p.join(directory.path, 'trash_bin');
@@ -89,7 +90,7 @@ class PrivateAssetService {
     return _cachedTrashPath!;
   }
 
-  Future<String> getHiddenPath() async {
+  Future<String> _getHiddenPath() async {
     if (_cachedHiddenPath != null) return _cachedHiddenPath!;
     final directory = await getApplicationDocumentsDirectory();
     _cachedHiddenPath = p.join(directory.path, 'hidden');
@@ -105,7 +106,7 @@ class PrivateAssetService {
     List<AssetEntity> assets, {
     OperationController? op,
   }) async {
-    final trashDirPath = await getTrashPath();
+    final trashDirPath = await _getTrashPath();
 
     if (op != null) op.status.value = OperationStatus.running;
     int total = assets.length;
@@ -139,34 +140,33 @@ class PrivateAssetService {
     List<AssetEntity> assets, {
     OperationController? op,
   }) async {
-    final hiddenDirPath = await getHiddenPath();
-
     if (op != null) op.status.value = OperationStatus.running;
     int total = assets.length;
     int done = 0;
+    if (op != null) op.updateProgress(done, total);
+
+    List<AssetEntity> assetsToDelete = [];
 
     for (final asset in assets) {
       final file = await asset.originFile;
       if (file == null) continue;
 
-      final originalBytes = await file.readAsBytes();
+      final result = (asset.type == AssetType.video)
+          ? await Future.wait([
+              _saveEncryptedThumbnail(asset),
+              _saveEncryptedPreview(asset),
+              _saveEncryptedVideo(asset),
+            ])
+          : await Future.wait([
+              _saveEncryptedThumbnail(asset),
+              _saveEncryptedImage(asset),
+            ]);
 
-      final thumbBytes = await asset.thumbnailDataWithSize(
-        const ThumbnailSize(150, 150),
-      );
-
-      if (thumbBytes == null) continue;
-
-      final encryptedOriginal = encryptBytes(originalBytes);
-      final encryptedThumb = encryptBytes(thumbBytes);
-
-      await File(
-        p.join(hiddenDirPath, "${asset.id}.enc"),
-      ).writeAsBytes(encryptedOriginal);
-
-      await File(
-        p.join(hiddenDirPath, "${asset.id}_thumb.enc"),
-      ).writeAsBytes(encryptedThumb);
+      if (result.contains(false)) {
+        done++;
+        if (op != null) op.updateProgress(done, total);
+        continue;
+      }
 
       final item = PrivateAsset.fromAssetEntity(asset, PrivateCategory.hidden);
       await _db.insert(
@@ -174,46 +174,209 @@ class PrivateAssetService {
         item.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      assetsToDelete.add(asset);
 
       done++;
       if (op != null) op.updateProgress(done, total);
     }
 
-    await PhotoManager.editor.deleteWithIds(assets.map((a) => a.id).toList());
+    await PhotoManager.editor.deleteWithIds(
+      assetsToDelete.map((a) => a.id).toList(),
+    );
     if (op != null) op.resultMessage = '$done item(s) hidden successfully.';
     if (op != null) op.status.value = OperationStatus.completed;
   }
 
-  Uint8List encryptBytes(Uint8List bytes) {
-    final encrypter = Encrypter(AES(_appSettings.encryptionKey));
-    final iv = IV.fromSecureRandom(16);
-    final encrypted = encrypter.encryptBytes(bytes, iv: iv);
-    return Uint8List.fromList(iv.bytes + encrypted.bytes);
+  Uint8List _secureRandomBytes(int length) {
+    final rnd = SecureRandom("Fortuna")
+      ..seed(
+        KeyParameter(
+          Uint8List.fromList(
+            List.generate(
+              32,
+              (i) => DateTime.now().millisecondsSinceEpoch % 256,
+            ),
+          ),
+        ),
+      );
+
+    return rnd.nextBytes(length);
   }
 
-  Uint8List decryptBytes(Uint8List bytes) {
-    final iv = IV(bytes.sublist(0, 16));
-    final encryptedData = bytes.sublist(16);
-    final encrypter = Encrypter(AES(_appSettings.encryptionKey));
-    return Uint8List.fromList(
-      encrypter.decryptBytes(Encrypted(encryptedData), iv: iv),
-    );
+  Uint8List _encryptBytes(Uint8List bytes) {
+    final iv = _secureRandomBytes(16);
+
+    final cipher = CTRStreamCipher(AESEngine())
+      ..init(
+        true,
+        ParametersWithIV(KeyParameter(_appSettings.encryptionKey), iv),
+      );
+
+    final encrypted = cipher.process(bytes);
+
+    return Uint8List.fromList(iv + encrypted);
+  }
+
+  Uint8List _decryptBytes(Uint8List bytes) {
+    final iv = bytes.sublist(0, 16);
+    final data = bytes.sublist(16);
+
+    final cipher = CTRStreamCipher(AESEngine())
+      ..init(
+        false,
+        ParametersWithIV(KeyParameter(_appSettings.encryptionKey), iv),
+      );
+
+    return cipher.process(data);
+  }
+
+  Future<Uint8List> _getPlaceholderBytes(String placeholder) async {
+    final data = await rootBundle.load('assets/placeholder/$placeholder.jpg');
+    return data.buffer.asUint8List();
+  }
+
+  Future<void> _saveEncryptedThumbnail(AssetEntity asset) async {
+    Uint8List thumbBytes;
+
+    try {
+      final data = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(200, 200),
+      );
+
+      if (data != null) {
+        thumbBytes = data;
+      } else {
+        thumbBytes = await _getPlaceholderBytes(
+          asset.type == AssetType.image
+              ? 'image_thumbnail_placeholder'
+              : 'video_thumbnail_placeholder',
+        );
+      }
+    } catch (e) {
+      thumbBytes = await _getPlaceholderBytes(
+        asset.type == AssetType.image
+            ? 'image_thumbnail_placeholder'
+            : 'video_thumbnail_placeholder',
+      );
+    }
+
+    final hiddenDirPath = await _getHiddenPath();
+    final encryptedThumb = _encryptBytes(thumbBytes);
+
+    await File(
+      p.join(hiddenDirPath, "${asset.id}_thumb.enc"),
+    ).writeAsBytes(encryptedThumb);
+  }
+
+  Future<void> _saveEncryptedPreview(AssetEntity asset) async {
+    Uint8List previewBytes;
+
+    try {
+      final data = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(1080, 1080),
+      );
+
+      if (data != null) {
+        previewBytes = data;
+      } else {
+        previewBytes = await _getPlaceholderBytes('video_preview_placeholder');
+      }
+    } catch (e) {
+      previewBytes = await _getPlaceholderBytes('video_preview_placeholder');
+    }
+
+    final hiddenDirPath = await _getHiddenPath();
+    final encryptedThumb = _encryptBytes(previewBytes);
+
+    await File(
+      p.join(hiddenDirPath, "${asset.id}_preview.enc"),
+    ).writeAsBytes(encryptedThumb);
+  }
+
+  Future<bool> _saveEncryptedImage(AssetEntity asset) async {
+    final bytes = await asset.originBytes;
+    if (bytes == null) return false;
+
+    try {
+      final hiddenDirPath = await _getHiddenPath();
+      final encryptedImage = _encryptBytes(bytes);
+
+      await File(
+        p.join(hiddenDirPath, "${asset.id}.enc"),
+      ).writeAsBytes(encryptedImage);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> _saveEncryptedVideo(AssetEntity asset) async {
+    final file = await asset.originFile;
+    if (file == null) return false;
+
+    try {
+      final hiddenDirPath = await _getHiddenPath();
+      final encFile = File(p.join(hiddenDirPath, "${asset.id}.enc"));
+
+      await FileCryptoService.encryptFile(
+        inputPath: file.path,
+        outputPath: encFile.path,
+        key: _appSettings.encryptionKey,
+      );
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<Uint8List?> getDecryptedThumbnail(PrivateAsset asset) async {
-    final hiddenDirPath = await getHiddenPath();
+    final hiddenDirPath = await _getHiddenPath();
     final thumbFile = File(p.join(hiddenDirPath, "${asset.id}_thumb.enc"));
     if (!thumbFile.existsSync()) return null;
     final encryptedThumb = thumbFile.readAsBytesSync();
-    return decryptBytes(encryptedThumb);
+    return _decryptBytes(encryptedThumb);
   }
 
-  Future<Uint8List?> getDecryptedOriginal(PrivateAsset asset) async {
-    final hiddenDirPath = await getHiddenPath();
+  Future<Uint8List?> getDecryptedPreview(PrivateAsset asset) async {
+    final hiddenDirPath = await _getHiddenPath();
+    final previewFile = File(p.join(hiddenDirPath, "${asset.id}_preview.enc"));
+    if (!previewFile.existsSync()) return null;
+    final encrypted = previewFile.readAsBytesSync();
+    return _decryptBytes(encrypted);
+  }
+
+  Future<Uint8List?> getDecryptedImage(PrivateAsset asset) async {
+    final hiddenDirPath = await _getHiddenPath();
     final encFile = File(p.join(hiddenDirPath, "${asset.id}.enc"));
     if (!encFile.existsSync()) return null;
     final encryptedData = encFile.readAsBytesSync();
-    return decryptBytes(encryptedData);
+    return _decryptBytes(encryptedData);
+  }
+
+  Future<File?> getDecryptedVideo(PrivateAsset asset) async {
+    try {
+      final hiddenDir = await _getHiddenPath();
+      final encFile = File(p.join(hiddenDir, "${asset.id}.enc"));
+
+      final tempDir = await getTemporaryDirectory();
+
+      final cacheDir = Directory(p.join(tempDir.path, "vault_video_cache"));
+      if (!await cacheDir.exists()) {
+        await cacheDir.create(recursive: true);
+      }
+
+      final outFile = File(p.join(cacheDir.path, "${asset.id}.mp4"));
+
+      await FileCryptoService.decryptFile(
+        inputPath: encFile.path,
+        outputPath: outFile.path,
+        key: _appSettings.encryptionKey,
+      );
+
+      return outFile;
+    } catch (e) {
+      return null;
+    }
   }
 
   Future<List<PrivateAsset>> fetchByCategory(PrivateCategory category) async {
@@ -226,8 +389,159 @@ class PrivateAssetService {
     return maps.map((m) => PrivateAsset.fromMap(m)).toList();
   }
 
-  Future<void> deleteFromDb(String id) async {
+  Future<void> unhide(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
+    final hiddenDirPath = await _getHiddenPath();
+
+    op?.status.value = OperationStatus.running;
+
+    int total = items.length;
+    int done = 0;
+
+    for (final item in items) {
+      final encFile = item.getLocalFile(hiddenDirPath);
+
+      if (!await encFile.exists()) continue;
+
+      if (item.type == AssetMediaType.image) {
+        final decrypted = _decryptBytes(await encFile.readAsBytes());
+
+        await PhotoManager.editor.saveImage(
+          decrypted,
+          filename: item.title,
+          desc: 'Originated from ${item.relativePath}',
+          creationDate: item.createdAt,
+          relativePath: 'Pictures/Unhidden',
+          title: item.title,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          orientation: item.orientation,
+        );
+      } else {
+        final tempFile = await getDecryptedVideo(item);
+
+        if (tempFile != null) {
+          await PhotoManager.editor.saveVideo(
+            tempFile,
+            title: item.title,
+            desc: 'Originated from ${item.relativePath}',
+            creationDate: item.createdAt,
+            relativePath: 'Pictures/Unhidden',
+            latitude: item.latitude,
+            longitude: item.longitude,
+            orientation: item.orientation,
+          );
+        }
+      }
+
+      await _cleanupPrivateFiles(item);
+      await _deleteFromDb(item.id);
+
+      done++;
+      op?.updateProgress(done, total);
+    }
+
+    op?.resultMessage = '$done item(s) unhidden successfully.';
+    op?.status.value = OperationStatus.completed;
+  }
+
+  Future<void> restore(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
+    final trashDirPath = await _getTrashPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = items.length;
+    int done = 0;
+
+    for (final item in items) {
+      final file = item.getLocalFile(trashDirPath);
+
+      if (await file.exists()) {
+        if (item.type == AssetMediaType.image) {
+          await PhotoManager.editor.saveImage(
+            await file.readAsBytes(),
+            filename: item.title,
+            desc: 'Originated from ${item.relativePath}',
+            creationDate: item.createdAt,
+            relativePath: 'Pictures/Restored',
+            title: item.title,
+            latitude: item.latitude,
+            longitude: item.longitude,
+            orientation: item.orientation,
+          );
+        } else {
+          await PhotoManager.editor.saveVideo(
+            file,
+            title: item.title,
+            desc: 'Originated from ${item.relativePath}',
+            creationDate: item.createdAt,
+            relativePath: 'Pictures/Restored',
+            latitude: item.latitude,
+            longitude: item.longitude,
+            orientation: item.orientation,
+          );
+        }
+
+        await _cleanupPrivateFiles(item);
+        await _deleteFromDb(item.id);
+      }
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
+    }
+    if (op != null) op.resultMessage = '$done item(s) restored successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
+  }
+
+  Future<void> permanentlyDelete(
+    List<PrivateAsset> items, {
+    OperationController? op,
+  }) async {
+    final trashDirPath = await _getTrashPath();
+
+    if (op != null) op.status.value = OperationStatus.running;
+    int total = items.length;
+    int done = 0;
+
+    for (final item in items) {
+      final file = item.getLocalFile(trashDirPath);
+      if (await file.exists()) await file.delete();
+
+      await _deleteFromDb(item.id);
+
+      done++;
+      if (op != null) op.updateProgress(done, total);
+    }
+
+    if (op != null) op.resultMessage = '$done item(s) deleted successfully.';
+    if (op != null) op.status.value = OperationStatus.completed;
+  }
+
+  Future<void> _deleteFromDb(String id) async {
     await _db.delete('private_assets', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> _cleanupPrivateFiles(PrivateAsset item) async {
+    final hiddenDir = await _getHiddenPath();
+
+    final encFile = File(p.join(hiddenDir, "${item.id}.enc"));
+    final thumbFile = File(p.join(hiddenDir, "${item.id}_thumb.enc"));
+    final previewFile = File(p.join(hiddenDir, "${item.id}_preview.enc"));
+
+    if (await encFile.exists()) await encFile.delete();
+    if (await thumbFile.exists()) await thumbFile.delete();
+    if (await previewFile.exists()) await previewFile.delete();
+
+    // delete cached decrypted video
+    final tempDir = await getTemporaryDirectory();
+    final cacheDir = Directory(p.join(tempDir.path, "vault_video_cache"));
+
+    final cachedVideo = File(p.join(cacheDir.path, "${item.id}.mp4"));
+    if (await cachedVideo.exists()) await cachedVideo.delete();
   }
 
   Future<void> clearAllTrash() async {

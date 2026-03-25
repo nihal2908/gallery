@@ -1,9 +1,9 @@
-import 'dart:math';
+import 'dart:convert';
 import 'dart:typed_data';
-import 'package:encrypt/encrypt.dart' as encrypt;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pointycastle/export.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppSettings extends ChangeNotifier {
@@ -24,7 +24,7 @@ class AppSettings extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   bool _recycleBinEnabled = true;
   int _trashLifeDays = 30;
-  encrypt.Key? _encryptionKey;
+  Uint8List? _encryptionKey;
 
   // ---------------- LOCAL PAGE STATE ----------------
   final ValueNotifier<bool> keepScreenOnNotifier = ValueNotifier(false);
@@ -53,28 +53,41 @@ class AppSettings extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   bool get recycleBinEnabled => _recycleBinEnabled;
   int get trashLifeDays => _trashLifeDays;
-  encrypt.Key get encryptionKey => _encryptionKey!;
+  Uint8List get encryptionKey => _encryptionKey!;
 
   Uint8List _generateRandomKey() {
-    final random = Random.secure();
-    return Uint8List.fromList(List.generate(32, (_) => random.nextInt(256)));
+    final rnd = SecureRandom("Fortuna")
+      ..seed(
+        KeyParameter(
+          Uint8List.fromList(
+            List.generate(
+              32,
+              (i) => DateTime.now().millisecondsSinceEpoch % 256,
+            ),
+          ),
+        ),
+      );
+
+    return rnd.nextBytes(32);
   }
 
   Future<void> _initializeEncryptionKey() async {
     final storedKey = await _secureStorage.read(key: _keyStorageName);
 
     if (storedKey != null) {
-      _encryptionKey = encrypt.Key.fromBase64(storedKey);
+      _encryptionKey = base64Decode(storedKey);
       return;
     }
 
     // Generate new key
     final newKeyBytes = _generateRandomKey();
-    final newKey = encrypt.Key(newKeyBytes);
 
-    await _secureStorage.write(key: _keyStorageName, value: newKey.base64);
+    await _secureStorage.write(
+      key: _keyStorageName,
+      value: base64Encode(newKeyBytes),
+    );
 
-    _encryptionKey = newKey;
+    _encryptionKey = newKeyBytes;
   }
 
   // ---------------- GLOBAL SETTERS ----------------

@@ -26,9 +26,10 @@ class _VideoViewerState extends State<VideoViewer> {
     _chewieController = ChewieController(
       videoPlayerController: _videoController!,
       autoPlay: true,
-      looping: false,
-      allowFullScreen: true,
+      looping: true,
+      allowFullScreen: false,
       allowPlaybackSpeedChanging: true,
+      zoomAndPan: true,
     );
 
     setState(() {

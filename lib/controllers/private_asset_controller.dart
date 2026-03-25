@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:photo_manager/photo_manager.dart';
 
 import '../models/private_asset_model.dart';
 import '../services/authentication_service.dart';
@@ -90,9 +89,26 @@ class PrivateAssetController extends ChangeNotifier {
     return thumbnail;
   }
 
+  Future<Uint8List?> getCompleteImage(PrivateAsset asset) async {
+    return await _privateAssetService.getDecryptedImage(asset);
+  }
+
+  Future<Uint8List?> getVideoPreview(PrivateAsset asset) async {
+    return await _privateAssetService.getDecryptedPreview(asset);
+  }
+
+  Future<File?> getCompleteVideoFile(PrivateAsset asset) async {
+    return await _privateAssetService.getDecryptedVideo(asset);
+  }
+
   Set<PrivateAsset> _selectedItems = {};
   ValueNotifier<bool> isSelectionMode = ValueNotifier(false);
   ValueNotifier<int> selectedCount = ValueNotifier(0);
+  ValueNotifier<bool> showControls = ValueNotifier(true);
+
+  void toggleControls() {
+    showControls.value = !showControls.value;
+  }
 
   bool get areAllSelected => selectedCount.value == _items.length;
   bool get hasSelection => selectedCount.value > 0;
@@ -131,31 +147,61 @@ class PrivateAssetController extends ChangeNotifier {
   List<PrivateAsset> get selectedItems => _selectedItems.toList();
   bool isSelected(PrivateAsset item) => _selectedItems.contains(item);
 
+  bool _restoring = false;
+
   Future<void> restoreCurrent() async {
-    await _restore([currentItem]);
+    if (_restoring) return;
+    _restoring = true;
+    try {
+      await _privateAssetService.restore([currentItem]);
+    } finally {
+      _restoring = false;
+    }
+    refresh();
   }
 
   Future<void> restoreSelected({OperationController? op}) async {
-    await _restore(selectedItems, op: op);
+    await _privateAssetService.restore(selectedItems, op: op);
     clearSelections();
+    refresh();
   }
 
+  bool _unhiding = false;
+
   Future<void> unhideCurrent() async {
-    await _unhide([currentItem]);
+    if (_unhiding) return;
+    _unhiding = true;
+    try {
+      await _privateAssetService.unhide([currentItem]);
+    } finally {
+      _unhiding = false;
+    }
+    refresh();
   }
 
   Future<void> unhideSelected({OperationController? op}) async {
-    await _unhide(selectedItems, op: op);
+    await _privateAssetService.unhide(selectedItems, op: op);
     clearSelections();
+    refresh();
   }
 
+  bool _deleting = false;
+
   Future<void> permanentlyDeleteCurrent() async {
-    await _permanentlyDelete([currentItem]);
+    if (_deleting) return;
+    _deleting = true;
+    try {
+      await _privateAssetService.permanentlyDelete([currentItem]);
+    } finally {
+      _deleting = false;
+    }
+    refresh();
   }
 
   Future<void> permanentlyDeleteSelected({OperationController? op}) async {
-    await _permanentlyDelete(selectedItems, op: op);
+    await _privateAssetService.permanentlyDelete(selectedItems, op: op);
     clearSelections();
+    refresh();
   }
 
   ValueNotifier<int> currentIndex = ValueNotifier(0);
@@ -163,139 +209,10 @@ class PrivateAssetController extends ChangeNotifier {
 
   PrivateAsset get currentItem => _items[currentIndex.value];
 
-  Future<File?> getFile(PrivateAsset item) async {
-    final trashDirPath = await _privateAssetService.getTrashPath();
-    final file = item.getLocalFile(trashDirPath);
-    if (await file.exists()) return file;
-    return null;
-  }
-
-  Future<void> _unhide(
-    List<PrivateAsset> items, {
-    OperationController? op,
-  }) async {
-    final hiddenDirPath = await _privateAssetService.getHiddenPath();
-
-    if (op != null) op.status.value = OperationStatus.running;
-    int total = items.length;
-    int done = 0;
-
-    for (final item in items) {
-      final file = item.getLocalFile(hiddenDirPath);
-
-      if (await file.exists()) {
-        if (item.type == AssetMediaType.image) {
-          await PhotoManager.editor.saveImage(
-            await file.readAsBytes(),
-            filename: item.title,
-            desc: 'Originated from ${item.relativePath}',
-            creationDate: item.createdAt,
-            relativePath: 'Pictures/Unhidden',
-            title: item.title,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            orientation: item.orientation,
-          );
-        } else {
-          await PhotoManager.editor.saveVideo(
-            file,
-            title: item.title,
-            desc: 'Originated from ${item.relativePath}',
-            creationDate: item.createdAt,
-            relativePath: 'Pictures/Unhidden',
-            latitude: item.latitude,
-            longitude: item.longitude,
-            orientation: item.orientation,
-          );
-        }
-
-        // Cleanup
-        await file.delete();
-        await _privateAssetService.deleteFromDb(item.id);
-      }
-
-      done++;
-      if (op != null) op.updateProgress(done, total);
-    }
-    if (op != null) op.resultMessage = '$done item(s) unhidden successfully.';
-    if (op != null) op.status.value = OperationStatus.completed;
-    refresh();
-  }
-
-  Future<void> _restore(
-    List<PrivateAsset> items, {
-    OperationController? op,
-  }) async {
-    final trashDirPath = await _privateAssetService.getTrashPath();
-
-    if (op != null) op.status.value = OperationStatus.running;
-    int total = items.length;
-    int done = 0;
-
-    for (final item in items) {
-      final file = item.getLocalFile(trashDirPath);
-
-      if (await file.exists()) {
-        if (item.type == AssetMediaType.image) {
-          await PhotoManager.editor.saveImage(
-            await file.readAsBytes(),
-            filename: item.title,
-            desc: 'Originated from ${item.relativePath}',
-            creationDate: item.createdAt,
-            relativePath: 'Pictures/Restored',
-            title: item.title,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            orientation: item.orientation,
-          );
-        } else {
-          await PhotoManager.editor.saveVideo(
-            file,
-            title: item.title,
-            desc: 'Originated from ${item.relativePath}',
-            creationDate: item.createdAt,
-            relativePath: 'Pictures/Restored',
-            latitude: item.latitude,
-            longitude: item.longitude,
-            orientation: item.orientation,
-          );
-        }
-
-        // Cleanup
-        await file.delete();
-        await _privateAssetService.deleteFromDb(item.id);
-      }
-
-      done++;
-      if (op != null) op.updateProgress(done, total);
-    }
-    if (op != null) op.resultMessage = '$done item(s) restored successfully.';
-    if (op != null) op.status.value = OperationStatus.completed;
-    refresh();
-  }
-
-  Future<void> _permanentlyDelete(
-    List<PrivateAsset> items, {
-    OperationController? op,
-  }) async {
-    final trashDirPath = await _privateAssetService.getTrashPath();
-
-    if (op != null) op.status.value = OperationStatus.running;
-    int total = items.length;
-    int done = 0;
-
-    for (final item in items) {
-      final file = item.getLocalFile(trashDirPath);
-      if (await file.exists()) await file.delete();
-
-      await _privateAssetService.deleteFromDb(item.id);
-
-      done++;
-      if (op != null) op.updateProgress(done, total);
-    }
-
-    if (op != null) op.resultMessage = '$done item(s) deleted successfully.';
-    if (op != null) op.status.value = OperationStatus.completed;
-    refresh();
-  }
+  // Future<File?> getFile(PrivateAsset item) async {
+  //   final trashDirPath = await _privateAssetService.getTrashPath();
+  //   final file = item.getLocalFile(trashDirPath);
+  //   if (await file.exists()) return file;
+  //   return null;
+  // }
 }

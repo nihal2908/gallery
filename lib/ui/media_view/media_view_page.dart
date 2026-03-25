@@ -206,9 +206,7 @@ class _BottomBar extends StatelessWidget {
                     children: [
                       IconButton(
                         icon: Icon(Icons.share),
-                        onPressed: () {
-                          // controller.shareCurrent();
-                        },
+                        onPressed: controller.shareCurrent,
                         color: Colors.black,
                       ),
                       IconButton(
@@ -229,86 +227,28 @@ class _BottomBar extends StatelessWidget {
                       ),
                       IconButton(
                         icon: Icon(Icons.delete),
-                        onPressed: () {
-                          _showDeleteDialog(context);
-                        },
+                        onPressed: () => _showDeleteDialog(context),
                         color: Colors.black,
                       ),
                       PopupMenuButton(
                         itemBuilder: (context) {
                           return [
                             PopupMenuItem(
-                              onTap: controller.setCurrentAsWallpaper,
+                              onTap: () => _showSetWallpaperDialog(context),
                               child: Text('Set as Wallpaper'),
                             ),
                             PopupMenuItem(
-                              onTap: () async {
-                                final album =
-                                    await Navigator.push<AssetPathEntity>(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => AlbumGridPage(
-                                          mode: AlbumGridMode.pick,
-                                          title: 'Copy to album',
-                                        ),
-                                      ),
-                                    );
-                                if (album != null) {
-                                  controller.copyCurrentToAlbum(album);
-                                }
-                              },
+                              onTap: () => _copyToAlbum(context),
                               child: Text('Copy to Album'),
                             ),
                             PopupMenuItem(
-                              onTap: () async {
-                                final album =
-                                    await Navigator.push<AssetPathEntity>(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => AlbumGridPage(
-                                          mode: AlbumGridMode.pick,
-                                          title: 'Move to album',
-                                        ),
-                                      ),
-                                    );
-                                if (album != null) {
-                                  controller.moveCurrentToAlbum(album);
-                                }
-                              },
+                              onTap: () => _moveToAlbum(context),
                               child: Text('Move to Album'),
                             ),
                             PopupMenuItem(
+                              onTap: () => _hide(context),
                               child: Text('Hide'),
-                              onTap: () async {
-                                if (await controller.hasPassword()) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PasswordEntryPage(
-                                        mode:
-                                            PasswordEntryPageMode.checkPassword,
-                                      ),
-                                    ),
-                                  ).then((value) async {
-                                    if (!value) return;
-                                    await controller.hideCurrent();
-                                  });
-                                } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PasswordEntryPage(
-                                        mode: PasswordEntryPageMode.setPassword,
-                                      ),
-                                    ),
-                                  ).then((value) async {
-                                    if (!value) return;
-                                    await controller.hideCurrent();
-                                  });
-                                }
-                              },
                             ),
-                            const PopupMenuItem(child: Text('Rename')),
                           ];
                         },
                         icon: Icon(Icons.more_vert),
@@ -320,6 +260,78 @@ class _BottomBar extends StatelessWidget {
             : SizedBox.shrink();
       },
     );
+  }
+
+  void _showSetWallpaperDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Set as Wallpaper'),
+          content: const Text('Do you want to set this image as wallpaper?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                controller.setCurrentAsWallpaper();
+                Navigator.of(context).pop();
+              },
+              child: const Text('Set as Wallpaper'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _copyToAlbum(BuildContext context) async {
+    final album = await Navigator.push<AssetPathEntity>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AlbumGridPage(mode: AlbumGridMode.pick, title: 'Copy to album'),
+      ),
+    );
+    if (album != null) {
+      controller.copyCurrentToAlbum(album);
+    }
+  }
+
+  void _moveToAlbum(BuildContext context) async {
+    final album = await Navigator.push<AssetPathEntity>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AlbumGridPage(mode: AlbumGridMode.pick, title: 'Move to album'),
+      ),
+    );
+    if (album != null) {
+      controller.moveCurrentToAlbum(album);
+    }
+  }
+
+  void _hide(BuildContext context) async {
+    final correctPassword = await controller.hasPassword()
+        ? await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  PasswordEntryPage(mode: PasswordEntryPageMode.checkPassword),
+            ),
+          )
+        : await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  PasswordEntryPage(mode: PasswordEntryPageMode.setPassword),
+            ),
+          );
+    if (correctPassword != null && correctPassword) controller.hideCurrent();
   }
 
   void _showDeleteDialog(BuildContext context) {
