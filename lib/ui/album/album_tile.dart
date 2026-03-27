@@ -38,9 +38,16 @@ class AlbumTile extends StatelessWidget {
                     return AssetEntityImage(
                       asset,
                       thumbnailFormat: ThumbnailFormat.jpeg,
-                      thumbnailSize: const ThumbnailSize(300, 300),
+                      thumbnailSize: const ThumbnailSize(250, 250),
                       fit: BoxFit.cover,
                       isOriginal: false,
+                      errorBuilder: (_, _, _) {
+                        return Image.asset(
+                          asset.type == AssetType.image
+                              ? 'assets/placeholder/image_thumbnail_placeholder.jpg'
+                              : 'assets/placeholder/video_thumbnail_placeholder.jpg',
+                        );
+                      },
                     );
                   },
                 ),

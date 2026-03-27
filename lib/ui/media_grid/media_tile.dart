@@ -59,6 +59,13 @@ class _Thumbnail extends StatelessWidget {
                     thumbnailSize: const ThumbnailSize(150, 150),
                     fit: BoxFit.cover,
                     isOriginal: false,
+                    errorBuilder: (_, _, _) {
+                      return Image.asset(
+                        asset!.type == AssetType.image
+                            ? 'assets/placeholder/image_thumbnail_placeholder.jpg'
+                            : 'assets/placeholder/video_thumbnail_placeholder.jpg',
+                      );
+                    },
                   ),
                 )
               : null,
