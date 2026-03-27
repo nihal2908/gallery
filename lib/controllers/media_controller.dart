@@ -34,8 +34,8 @@ class MediaController extends ChangeNotifier {
   ValueNotifier<int> assetCount = ValueNotifier(0);
 
   ValueNotifier<bool> showControls = ValueNotifier(true);
-  void toggleControls() {
-    showControls.value = !showControls.value;
+  void toggleControls([bool? show]) {
+    showControls.value = show ?? !showControls.value;
   }
 
   ValueNotifier<int> selectedCount = ValueNotifier(0);

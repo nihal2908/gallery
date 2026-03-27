@@ -121,8 +121,8 @@ class PrivateAssetController extends ChangeNotifier {
 
   ValueNotifier<bool> showControls = ValueNotifier(true);
 
-  void toggleControls() {
-    showControls.value = !showControls.value;
+  void toggleControls([bool? show]) {
+    showControls.value = show ?? !showControls.value;
   }
 
   Set<PrivateAsset> _selectedItems = {};

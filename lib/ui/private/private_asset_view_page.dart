@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:chewie/chewie.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -288,6 +290,7 @@ class _VideoViewerState extends State<_VideoViewer> {
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
   Uint8List? _preview;
+  File? _video;
   bool _error = false;
 
   Future<void> _loadPreview() async {
@@ -296,20 +299,29 @@ class _VideoViewerState extends State<_VideoViewer> {
   }
 
   Future<void> _loadVideo() async {
-    try {
-      final file = await widget.controller.getCompleteVideoFile(widget.item);
+    final file = await widget.controller.getCompleteVideoFile(widget.item);
+    setState(() {
       if (file == null) {
-        setState(() {
-          _error = true;
-        });
+        _error = true;
         return;
+      } else {
+        _video = file;
       }
-      _videoController = VideoPlayerController.file(file);
+    });
+  }
+
+  Future<void> _startVideo() async {
+    if (_video == null) return;
+    try {
+      _videoController = VideoPlayerController.file(_video!);
       await _videoController!.initialize();
+
+      widget.controller.toggleControls(false);
 
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
         looping: true,
+        autoPlay: true,
         allowFullScreen: false,
         allowPlaybackSpeedChanging: true,
         zoomAndPan: true,
@@ -326,6 +338,15 @@ class _VideoViewerState extends State<_VideoViewer> {
     }
   }
 
+  Future<void> _stopVideo() async {
+    if (_videoController != null) _videoController!.dispose();
+    if (_chewieController != null) _chewieController!.dispose();
+    setState(() {
+      _chewieController = null;
+    });
+    widget.controller.toggleControls(true);
+  }
+
   @override
   void initState() {
     _loadPreview();
@@ -339,7 +360,11 @@ class _VideoViewerState extends State<_VideoViewer> {
       color: Colors.black,
       child: Center(
         child: _chewieController != null
-            ? Chewie(controller: _chewieController!)
+            ? PopScope(
+                canPop: false,
+                onPopInvokedWithResult: (_, _) => _stopVideo(),
+                child: Chewie(controller: _chewieController!),
+              )
             : Stack(
                 alignment: Alignment.center,
                 children: [
@@ -349,7 +374,16 @@ class _VideoViewerState extends State<_VideoViewer> {
                   ),
                   _error
                       ? Icon(Icons.warning_rounded, color: Colors.red, size: 50)
-                      : CircularProgressIndicator(color: Colors.white),
+                      : _video == null
+                      ? CircularProgressIndicator(color: Colors.white)
+                      : IconButton(
+                          iconSize: 70,
+                          onPressed: _startVideo,
+                          icon: const Icon(
+                            Icons.play_circle_fill,
+                            color: Colors.white,
+                          ),
+                        ),
                 ],
               ),
       ),

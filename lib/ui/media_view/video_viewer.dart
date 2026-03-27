@@ -26,7 +26,7 @@ class _VideoViewerState extends State<VideoViewer> {
     _videoController = VideoPlayerController.file(file);
     await _videoController!.initialize();
 
-    widget.controller.toggleControls();
+    widget.controller.toggleControls(false);
 
     _chewieController = ChewieController(
       videoPlayerController: _videoController!,
@@ -48,7 +48,7 @@ class _VideoViewerState extends State<VideoViewer> {
     setState(() {
       _initialized = false;
     });
-    widget.controller.toggleControls();
+    widget.controller.toggleControls(true);
   }
 
   @override
