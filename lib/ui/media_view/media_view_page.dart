@@ -64,7 +64,7 @@ class _MediaViewPageState extends State<MediaViewPage> {
                       if (asset == null) return SizedBox.shrink();
                       return asset.type == AssetType.image
                           ? ImageViewer(asset: asset)
-                          : VideoViewer(asset: asset);
+                          : VideoViewer(asset: asset, controller: controller);
                     },
                   ),
                 ),

@@ -40,107 +40,112 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
         controller.selectedCount,
       ]),
       builder: (_, __) {
-        return Scaffold(
-          appBar: AppBar(
-            leading: controller.isSelectionMode.value
-                ? IconButton(
-                    icon: const Icon(Icons.close),
+        return PopScope(
+          canPop: !controller.isSelectionMode.value,
+          onPopInvokedWithResult: (didPop, _) => controller.clearSelections(),
+          child: Scaffold(
+            appBar: AppBar(
+              leading: controller.isSelectionMode.value
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        controller.clearSelections();
+                      },
+                    )
+                  : null,
+              title: controller.isSelectionMode.value
+                  ? Text(
+                      '${controller.selectedCount.value}/${controller.itemCount} selected',
+                    )
+                  : widget.category == PrivateCategory.trash
+                  ? Text('Recycle Bin (${controller.itemCount})')
+                  : Text('Hidden (${controller.itemCount})'),
+              actions: [
+                if (!controller.isSelectionMode.value)
+                  IconButton(
+                    icon: const Icon(Icons.check_box),
                     onPressed: () {
-                      controller.clearSelections();
+                      controller.enterSelectionMode();
                     },
-                  )
-                : null,
-            title: controller.isSelectionMode.value
-                ? Text(
-                    '${controller.selectedCount.value}/${controller.itemCount} selected',
-                  )
-                : widget.category == PrivateCategory.trash
-                ? Text('Recycle Bin (${controller.itemCount})')
-                : Text('Hidden (${controller.itemCount})'),
-            actions: [
-              if (!controller.isSelectionMode.value)
-                IconButton(
-                  icon: const Icon(Icons.check_box),
-                  onPressed: () {
-                    controller.enterSelectionMode();
-                  },
-                ),
-              if (widget.category == PrivateCategory.trash &&
-                  controller.hasSelection)
-                IconButton(
-                  icon: const Icon(Icons.restore),
-                  onPressed: () {
-                    _showRestoreConfirmation();
-                  },
-                ),
-              if (widget.category == PrivateCategory.hidden &&
-                  controller.hasSelection)
-                IconButton(
-                  icon: const Icon(Icons.visibility),
-                  onPressed: () {
-                    _showUnhideConfirmation();
-                  },
-                ),
-              if (controller.hasSelection)
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () {
-                    _showDeleteConfirmation();
-                  },
-                ),
-              if (controller.isSelectionMode.value && controller.areAllSelected)
-                IconButton(
-                  icon: const Icon(Icons.check_box_outline_blank),
-                  onPressed: () {
-                    controller.deselectAll();
-                  },
-                ),
-              if (controller.isSelectionMode.value &&
-                  !controller.areAllSelected)
-                IconButton(
-                  icon: const Icon(Icons.check_box),
-                  onPressed: () {
-                    controller.selectAll();
-                  },
-                ),
-            ],
-          ),
-
-          body: GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              childAspectRatio: 1,
-              crossAxisSpacing: 4,
-              mainAxisSpacing: 4,
+                  ),
+                if (widget.category == PrivateCategory.trash &&
+                    controller.hasSelection)
+                  IconButton(
+                    icon: const Icon(Icons.restore),
+                    onPressed: () {
+                      _showRestoreConfirmation();
+                    },
+                  ),
+                if (widget.category == PrivateCategory.hidden &&
+                    controller.hasSelection)
+                  IconButton(
+                    icon: const Icon(Icons.visibility),
+                    onPressed: () {
+                      _showUnhideConfirmation();
+                    },
+                  ),
+                if (controller.hasSelection)
+                  IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: () {
+                      _showDeleteConfirmation();
+                    },
+                  ),
+                if (controller.isSelectionMode.value &&
+                    controller.areAllSelected)
+                  IconButton(
+                    icon: const Icon(Icons.check_box_outline_blank),
+                    onPressed: () {
+                      controller.deselectAll();
+                    },
+                  ),
+                if (controller.isSelectionMode.value &&
+                    !controller.areAllSelected)
+                  IconButton(
+                    icon: const Icon(Icons.check_box),
+                    onPressed: () {
+                      controller.selectAll();
+                    },
+                  ),
+              ],
             ),
-            itemCount: controller.itemCount,
-            itemBuilder: (_, index) {
-              final item = controller.item(index);
-              final thumbnail = controller.getThumbnailAt(index);
-              return PrivateAssetTile(
-                item: item,
-                thumbnail: thumbnail,
-                isSelected: controller.selectedItems.contains(item),
-                isSelectionMode: controller.isSelectionMode.value,
-                onOpen: () {
-                  if (controller.isSelectionMode.value) {
-                    controller.toggleSelection(item);
-                  } else {
-                    controller.setCurrentIndex = index;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PrivateAssetViewPage(
-                          thumbnail: thumbnail,
-                          controller: controller,
+
+            body: GridView.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                childAspectRatio: 1,
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 4,
+              ),
+              itemCount: controller.itemCount,
+              itemBuilder: (_, index) {
+                final item = controller.item(index);
+                final thumbnail = controller.getThumbnailAt(index);
+                return PrivateAssetTile(
+                  item: item,
+                  thumbnail: thumbnail,
+                  isSelected: controller.selectedItems.contains(item),
+                  isSelectionMode: controller.isSelectionMode.value,
+                  onOpen: () {
+                    if (controller.isSelectionMode.value) {
+                      controller.toggleSelection(item);
+                    } else {
+                      controller.setCurrentIndex = index;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PrivateAssetViewPage(
+                            thumbnail: thumbnail,
+                            controller: controller,
+                          ),
                         ),
-                      ),
-                    );
-                  }
-                },
-                onSelect: () => controller.toggleSelection(item),
-              );
-            },
+                      );
+                    }
+                  },
+                  onSelect: () => controller.toggleSelection(item),
+                );
+              },
+            ),
           ),
         );
       },
@@ -173,7 +178,7 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
       title: 'Restore ${controller.selectedCount.value} item(s)?',
       confirmText: 'Restore',
       description: 'These items will be moved to Pictures/Restored.',
-      onConfirm: (op) => controller.permanentlyDeleteSelected(op: op),
+      onConfirm: (op) => controller.restoreSelected(op: op),
     );
   }
 }

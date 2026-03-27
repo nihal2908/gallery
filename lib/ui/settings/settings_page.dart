@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gallery/ui/pdf_generation/pdf_manager_page.dart';
 
 import '../../dependency_injector.dart';
 import '../../models/private_asset_model.dart';
@@ -70,6 +71,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: 'Prevent screen dimming during slideshows',
                 enabled: settings.keepScreenOnNotifier.value,
                 onToggle: (value) => settings.toggleKeepScreenOn(value),
+              ),
+
+              // PDF Manager page
+              ListTile(
+                title: const Text('Generated PDFs'),
+                subtitle: const Text('Show all previously generated PDFs.'),
+                trailing: const Icon(Icons.picture_as_pdf),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => PdfManagerPage()),
+                  );
+                },
               ),
 
               // Hidden Album Access

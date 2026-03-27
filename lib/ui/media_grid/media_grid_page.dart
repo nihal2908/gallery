@@ -14,6 +14,7 @@ import '../../services/private_asset_service.dart';
 import '../album/album_grid_page.dart';
 import '../media_view/media_view_page.dart';
 import 'media_tile.dart';
+import 'pdf_quality_selection_widget.dart';
 
 class MediaGridPage extends StatefulWidget {
   final AssetPathEntity album;
@@ -57,132 +58,139 @@ class _MediaGridPageState extends State<MediaGridPage> {
         controller.favoriteChanged,
       ]),
       builder: (contect, _) {
-        return Scaffold(
-          appBar: AppBar(
-            leading: controller.isSelectionMode.value
-                ? IconButton(
-                    icon: const Icon(Icons.close),
+        return PopScope(
+          canPop: !controller.isSelectionMode.value,
+          onPopInvokedWithResult: (didPop, _) => controller.clearSelection(),
+          child: Scaffold(
+            appBar: AppBar(
+              leading: controller.isSelectionMode.value
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        controller.clearSelection();
+                      },
+                    )
+                  : null,
+              title: controller.isSelectionMode.value
+                  ? Text(
+                      '${controller.selectedCount.value}/${controller.assetCount.value} selected',
+                    )
+                  : Text(
+                      '${controller.album.name} (${controller.assetCount.value})',
+                    ),
+              actions: [
+                // enter selection mode button
+                if (!controller.isSelectionMode.value)
+                  IconButton(
+                    icon: const Icon(Icons.check_box),
                     onPressed: () {
-                      controller.clearSelection();
+                      controller.enterSelectionMode();
                     },
-                  )
-                : null,
-            title: controller.isSelectionMode.value
-                ? Text(
-                    '${controller.selectedCount.value}/${controller.assetCount.value} selected',
-                  )
-                : Text(
-                    '${controller.album.name} (${controller.assetCount.value})',
                   ),
-            actions: [
-              // enter selection mode button
-              if (!controller.isSelectionMode.value)
-                IconButton(
-                  icon: const Icon(Icons.check_box),
-                  onPressed: () {
-                    controller.enterSelectionMode();
-                  },
-                ),
-              // share button
-              if (controller.isSelectionMode.value)
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  onPressed: () {
-                    controller.shareSelected();
-                  },
-                ),
-              // delete button
-              if (controller.isSelectionMode.value)
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: _showDeleteDialog,
-                ),
-              // more options
-              PopupMenuButton(
-                itemBuilder: (context) => [
-                  controller.areAllSelected
-                      ? // deselect all
-                        PopupMenuItem(
-                          child: Text('Deselect All'),
-                          onTap: () => controller.deselectAll(),
-                        )
-                      : // select all
-                        PopupMenuItem(
-                          child: Text('Select All'),
-                          onTap: () => controller.selectAll(),
-                        ),
-                  // convert to pdf
-                  if (!controller.isNoSelected)
-                    PopupMenuItem(
-                      onTap: _showGeneratePDFDialog,
-                      child: Text('Generate PDF'),
-                    ),
-                  // copy to album
-                  if (!controller.isNoSelected)
-                    PopupMenuItem(
-                      onTap: () async {
-                        final album = await Navigator.push<AssetPathEntity>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AlbumGridPage(
-                              mode: AlbumGridMode.pick,
-                              title: 'Copy to album',
-                            ),
+                // share button
+                if (controller.isSelectionMode.value)
+                  IconButton(
+                    icon: const Icon(Icons.share),
+                    onPressed: () {
+                      controller.shareSelected();
+                    },
+                  ),
+                // delete button
+                if (controller.isSelectionMode.value)
+                  IconButton(
+                    icon: const Icon(Icons.delete),
+                    onPressed: _showDeleteDialog,
+                  ),
+                // more options
+                PopupMenuButton(
+                  itemBuilder: (context) => [
+                    controller.areAllSelected
+                        ? // deselect all
+                          PopupMenuItem(
+                            child: Text('Deselect All'),
+                            onTap: () => controller.deselectAll(),
+                          )
+                        : // select all
+                          PopupMenuItem(
+                            child: Text('Select All'),
+                            onTap: () => controller.selectAll(),
                           ),
-                        );
-                        if (album != null) _showCopyToAlbumDialog(album);
-                      },
-                      child: Text('Copy to Album'),
-                    ),
-                  // move to album
-                  if (!controller.isNoSelected)
-                    PopupMenuItem(
-                      child: Text('Move to Album'),
-                      onTap: () async {
-                        final album = await Navigator.push<AssetPathEntity>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AlbumGridPage(
-                              mode: AlbumGridMode.pick,
-                              title: 'Move to album',
+                    // convert to pdf
+                    if (!controller.isNoSelected)
+                      PopupMenuItem(
+                        onTap: _showGeneratePDFDialog,
+                        child: Text('Generate PDF'),
+                      ),
+                    // copy to album
+                    if (!controller.isNoSelected)
+                      PopupMenuItem(
+                        onTap: () async {
+                          final album = await Navigator.push<AssetPathEntity>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlbumGridPage(
+                                mode: AlbumGridMode.pick,
+                                title: 'Copy to album',
+                              ),
                             ),
-                          ),
-                        );
-                        if (album != null) _showMoveToAlbumDialog(album);
-                      },
-                    ),
-                  // hide button
-                  if (!controller.isNoSelected)
-                    PopupMenuItem(onTap: _showHideDialog, child: Text('Hide')),
-                ],
-              ),
-            ],
-          ),
-          body: GridView.builder(
-            padding: const EdgeInsets.all(2),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
+                          );
+                          if (album != null) _showCopyToAlbumDialog(album);
+                        },
+                        child: Text('Copy to Album'),
+                      ),
+                    // move to album
+                    if (!controller.isNoSelected)
+                      PopupMenuItem(
+                        child: Text('Move to Album'),
+                        onTap: () async {
+                          final album = await Navigator.push<AssetPathEntity>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlbumGridPage(
+                                mode: AlbumGridMode.pick,
+                                title: 'Move to album',
+                              ),
+                            ),
+                          );
+                          if (album != null) _showMoveToAlbumDialog(album);
+                        },
+                      ),
+                    // hide button
+                    if (!controller.isNoSelected)
+                      PopupMenuItem(
+                        onTap: _showHideDialog,
+                        child: Text('Hide'),
+                      ),
+                  ],
+                ),
+              ],
             ),
-            itemCount: controller.assetCount.value,
-            itemBuilder: (context, index) {
-              return MediaTile(
-                asset: controller.getAssetAt(index),
-                isSelectionMode: controller.isSelectionMode.value,
-                isSelected: controller.isSelectedAt(index),
-                onSelect: () => controller.toggleSelectionAt(index),
-                onOpen: () {
-                  controller.setCurrentIndex = index;
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MediaViewPage(controller: controller),
-                    ),
-                  );
-                },
-              );
-            },
+            body: GridView.builder(
+              padding: const EdgeInsets.all(2),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 2,
+                crossAxisSpacing: 2,
+              ),
+              itemCount: controller.assetCount.value,
+              itemBuilder: (context, index) {
+                return MediaTile(
+                  asset: controller.getAssetAt(index),
+                  isSelectionMode: controller.isSelectionMode.value,
+                  isSelected: controller.isSelectedAt(index),
+                  onSelect: () => controller.toggleSelectionAt(index),
+                  onOpen: () {
+                    controller.setCurrentIndex = index;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MediaViewPage(controller: controller),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         );
       },
@@ -192,6 +200,8 @@ class _MediaGridPageState extends State<MediaGridPage> {
   void _showGeneratePDFDialog() {
     final op = OperationController();
     final filenameController = TextEditingController();
+    bool keepOriginal = false;
+    int quality = 1088;
 
     showDialog(
       barrierDismissible: false,
@@ -218,6 +228,13 @@ class _MediaGridPageState extends State<MediaGridPage> {
                           hintText: 'Enter filename (optional)',
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      QualitySelectionWidget(
+                        onChanged: (keepOg, qual) {
+                          keepOriginal = keepOg;
+                          quality = qual;
+                        },
+                      ),
                       const SizedBox(height: 20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -231,6 +248,8 @@ class _MediaGridPageState extends State<MediaGridPage> {
                               op.start();
                               controller.convertSelectedToPDF(
                                 filename: filenameController.text.trim(),
+                                keepOriginal: keepOriginal,
+                                quality: quality,
                                 op: op,
                               );
                             },
@@ -275,7 +294,7 @@ class _MediaGridPageState extends State<MediaGridPage> {
                         size: 50,
                       ),
                       const SizedBox(height: 10),
-                      Text(op.resultMessage ?? "Completed"),
+                      Text("PDF generated successfully!\n${op.resultMessage}"),
                       const SizedBox(height: 20),
                       Row(
                         children: [

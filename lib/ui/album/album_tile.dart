@@ -13,14 +13,12 @@ class AlbumTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AspectRatio(
             aspectRatio: 1.0,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(
-                12,
-              ),
+              borderRadius: BorderRadius.circular(12),
               child: Container(
                 color: Colors.grey[300],
                 child: FutureBuilder<List<AssetEntity>>(
@@ -39,7 +37,7 @@ class AlbumTile extends StatelessWidget {
 
                     return AssetEntityImage(
                       asset,
-                    thumbnailFormat: ThumbnailFormat.jpeg,
+                      thumbnailFormat: ThumbnailFormat.jpeg,
                       thumbnailSize: const ThumbnailSize(300, 300),
                       fit: BoxFit.cover,
                       isOriginal: false,
@@ -55,7 +53,7 @@ class AlbumTile extends StatelessWidget {
           Text(
             album.name,
             maxLines: 1,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             overflow: TextOverflow.ellipsis,
           ),
 
@@ -64,7 +62,11 @@ class AlbumTile extends StatelessWidget {
             builder: (context, countSnapshot) {
               return Text(
                 "${countSnapshot.data ?? 0} items",
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
               );
             },
           ),

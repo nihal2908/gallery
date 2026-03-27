@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../controllers/media_controller.dart';
+
 class VideoViewer extends StatefulWidget {
   final AssetEntity asset;
-  const VideoViewer({super.key, required this.asset});
+  final MediaController controller;
+  const VideoViewer({super.key, required this.asset, required this.controller});
 
   @override
   State<VideoViewer> createState() => _VideoViewerState();
@@ -23,6 +26,8 @@ class _VideoViewerState extends State<VideoViewer> {
     _videoController = VideoPlayerController.file(file);
     await _videoController!.initialize();
 
+    widget.controller.toggleControls();
+
     _chewieController = ChewieController(
       videoPlayerController: _videoController!,
       autoPlay: true,
@@ -37,6 +42,15 @@ class _VideoViewerState extends State<VideoViewer> {
     });
   }
 
+  Future<void> _stopVideo() async {
+    if (_videoController != null) _videoController!.dispose();
+    if (_chewieController != null) _chewieController!.dispose();
+    setState(() {
+      _initialized = false;
+    });
+    widget.controller.toggleControls();
+  }
+
   @override
   void dispose() {
     _chewieController?.dispose();
@@ -47,7 +61,11 @@ class _VideoViewerState extends State<VideoViewer> {
   @override
   Widget build(BuildContext context) {
     return _initialized
-        ? Chewie(controller: _chewieController!)
+        ? PopScope(
+            canPop: !_initialized,
+            onPopInvokedWithResult: (_, _) => _stopVideo(),
+            child: Chewie(controller: _chewieController!),
+          )
         : Stack(
             alignment: Alignment.center,
             children: [

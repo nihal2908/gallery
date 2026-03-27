@@ -1,10 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:io';
-import 'package:path_provider/path_provider.dart' as path_provider;
+import 'package:photo_manager/photo_manager.dart';
 
 import './../core/operations/operation_controller.dart';
 
@@ -65,22 +66,34 @@ class MediaService {
   Future<File?> assetsToPdf(
     List<AssetEntity> assets, {
     String? fileName,
+    bool keepOriginal = false,
+    int quality = 1088,
     OperationController? op,
   }) async {
-    if (fileName == null) {
+    if (op != null) op.status.value = OperationStatus.running;
+    int done = 0;
+    int total = assets.length;
+
+    if (fileName == null || fileName.isEmpty) {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      fileName = 'DOC_$timestamp.pdf';
+      fileName = 'DOC_$timestamp';
     }
     fileName = "$fileName.pdf";
 
     final pdf = pw.Document();
 
     for (final asset in assets) {
+      if (asset.type == AssetType.video) {
+        done++;
+        if (op != null) op.updateProgress(done, total);
+        continue;
+      }
       try {
-        // Prefer originBytes for quality
-        final Uint8List? bytes = await asset.thumbnailDataWithSize(
-          const ThumbnailSize(1080, 1080),
-        );
+        final Uint8List? bytes = keepOriginal
+            ? await asset.originBytes
+            : await asset.thumbnailDataWithSize(
+                ThumbnailSize(quality, quality),
+              );
 
         if (bytes == null) continue;
 
@@ -90,17 +103,24 @@ class MediaService {
           pw.Page(
             pageFormat: PdfPageFormat.a4,
             build: (context) {
-              return pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain));
+              return pw.FullPage(
+                ignoreMargins: true,
+                child: pw.Center(
+                  child: pw.Image(image, fit: pw.BoxFit.contain),
+                ),
+              );
             },
           ),
         );
       } catch (e) {
-        // Skip corrupted / unsupported assets safely
         continue;
+      } finally {
+        done++;
+        if (op != null) op.updateProgress(done, total);
       }
     }
 
-    final dir = await path_provider.getExternalStorageDirectory();
+    final dir = await path_provider.getDownloadsDirectory();
     if (dir == null) {
       return null;
     }
@@ -110,6 +130,9 @@ class MediaService {
     final file = File('${dir.path}/$fileName');
 
     await file.writeAsBytes(await pdf.save());
+
+    if (op != null) op.resultMessage = file.path;
+    if (op != null) op.status.value = OperationStatus.completed;
     return file;
   }
 

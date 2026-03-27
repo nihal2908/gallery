@@ -212,6 +212,8 @@ class MediaController extends ChangeNotifier {
 
   Future<void> convertSelectedToPDF({
     String? filename,
+    bool keepOriginal = false,
+    int quality = 1088,
     OperationController? op,
   }) async {
     final selected = await getSelectedAssets();
@@ -220,6 +222,8 @@ class MediaController extends ChangeNotifier {
     final pdfFile = await _mediaService.assetsToPdf(
       selected,
       fileName: filename,
+      keepOriginal: keepOriginal,
+      quality: quality,
       op: op,
     );
     if (pdfFile == null) return;

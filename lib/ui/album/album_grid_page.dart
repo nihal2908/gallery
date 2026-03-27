@@ -72,9 +72,11 @@ class _AlbumGridPageState extends State<AlbumGridPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        elevation: 0,
         title: Text(
           widget.title ??
               (widget.mode == AlbumGridMode.pick ? 'Select Album' : 'Gallery'),
+          style: TextStyle(fontWeight: FontWeight.w500),
         ),
         actions: [
           IconButton(

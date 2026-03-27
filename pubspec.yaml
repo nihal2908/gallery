@@ -27,6 +27,7 @@ dependencies:
   screen_protector: ^1.5.1
   shared_preferences: ^2.5.4
   pointycastle: ^4.0.0
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:
