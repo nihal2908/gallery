@@ -4,10 +4,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../core/operations/operation_controller.dart';
 import '../models/private_asset_model.dart';
 import '../services/authentication_service.dart';
 import '../services/private_asset_service.dart';
-import '../core/operations/operation_controller.dart';
 
 class PrivateAssetController extends ChangeNotifier {
   final PrivateAssetService _privateAssetService;
@@ -42,6 +42,19 @@ class PrivateAssetController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Uint8List? getThumbnailAt(int index) {
+    _onItemBuilt(index);
+    final thumbnail = _thumbnailCache[_items[index].id];
+    if (thumbnail == null) return null;
+    return thumbnail;
+  }
+
+  void _onItemBuilt(int index) {
+    final page = index ~/ pageSize;
+    _loadThumbnailPage(page);
+    _loadThumbnailPage(page + 1);
+  }
+
   void _loadThumbnailPage(int page) {
     if (_loadingPages.contains(page)) return;
 
@@ -65,7 +78,9 @@ class PrivateAssetController extends ChangeNotifier {
       assets.map((asset) async {
         if (_thumbnailCache.containsKey(asset.id)) return;
 
-        final bytes = await _privateAssetService.getDecryptedThumbnail(asset);
+        final bytes = category == PrivateCategory.hidden
+            ? await _privateAssetService.getDecryptedThumbnail(asset)
+            : await _privateAssetService.getThumbnail(asset);
         if (bytes == null) return;
 
         _thumbnailCache[asset.id] = bytes;
@@ -76,40 +91,45 @@ class PrivateAssetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _onItemBuilt(int index) {
-    final page = index ~/ pageSize;
-    _loadThumbnailPage(page);
-    _loadThumbnailPage(page + 1);
-  }
-
-  Uint8List? getThumbnailAt(int index) {
-    _onItemBuilt(index);
-    final thumbnail = _thumbnailCache[_items[index].id];
-    if (thumbnail == null) return null;
-    return thumbnail;
-  }
-
   Future<Uint8List?> getCompleteImage(PrivateAsset asset) async {
+    if (category == PrivateCategory.trash) {
+      final file = await _privateAssetService.getAsset(asset);
+      if (file == null) return null;
+      return file.readAsBytesSync();
+    }
+
     return await _privateAssetService.getDecryptedImage(asset);
   }
 
   Future<Uint8List?> getVideoPreview(PrivateAsset asset) async {
+    if (category == PrivateCategory.trash) return null;
+
     return await _privateAssetService.getDecryptedPreview(asset);
   }
 
   Future<File?> getCompleteVideoFile(PrivateAsset asset) async {
+    if (category == PrivateCategory.trash) {
+      return await _privateAssetService.getAsset(asset);
+    }
+
     return await _privateAssetService.getDecryptedVideo(asset);
   }
 
-  Set<PrivateAsset> _selectedItems = {};
-  ValueNotifier<bool> isSelectionMode = ValueNotifier(false);
-  ValueNotifier<int> selectedCount = ValueNotifier(0);
+  ValueNotifier<int> currentIndex = ValueNotifier(0);
+  set setCurrentIndex(int index) => currentIndex.value = index;
+  PrivateAsset get currentItem => _items[currentIndex.value];
+
   ValueNotifier<bool> showControls = ValueNotifier(true);
 
   void toggleControls() {
     showControls.value = !showControls.value;
   }
 
+  Set<PrivateAsset> _selectedItems = {};
+  ValueNotifier<bool> isSelectionMode = ValueNotifier(false);
+  ValueNotifier<int> selectedCount = ValueNotifier(0);
+  List<PrivateAsset> get selectedItems => _selectedItems.toList();
+  bool isSelected(PrivateAsset item) => _selectedItems.contains(item);
   bool get areAllSelected => selectedCount.value == _items.length;
   bool get hasSelection => selectedCount.value > 0;
 
@@ -143,9 +163,6 @@ class PrivateAssetController extends ChangeNotifier {
     _selectedItems.clear();
     selectedCount.value = 0;
   }
-
-  List<PrivateAsset> get selectedItems => _selectedItems.toList();
-  bool isSelected(PrivateAsset item) => _selectedItems.contains(item);
 
   bool _restoring = false;
 
@@ -203,16 +220,4 @@ class PrivateAssetController extends ChangeNotifier {
     clearSelections();
     refresh();
   }
-
-  ValueNotifier<int> currentIndex = ValueNotifier(0);
-  set setCurrentIndex(int index) => currentIndex.value = index;
-
-  PrivateAsset get currentItem => _items[currentIndex.value];
-
-  // Future<File?> getFile(PrivateAsset item) async {
-  //   final trashDirPath = await _privateAssetService.getTrashPath();
-  //   final file = item.getLocalFile(trashDirPath);
-  //   if (await file.exists()) return file;
-  //   return null;
-  // }
 }

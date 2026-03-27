@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'package:flutter/services.dart';
-import 'package:gallery/services/native_crypto_service.dart';
 
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:pointycastle/export.dart';
 import 'package:sqflite/sqflite.dart';
@@ -11,6 +10,7 @@ import 'package:sqflite/sqflite.dart';
 import '../core/operations/operation_controller.dart';
 import '../core/settings/app_settings.dart';
 import '../models/private_asset_model.dart';
+import '../services/native_crypto_service.dart';
 import 'authentication_service.dart';
 
 class PrivateAssetService {
@@ -37,10 +37,10 @@ class PrivateAssetService {
       '''),
     );
 
-    await cleanupExpiredTrash();
+    _cleanupExpiredTrash();
   }
 
-  Future<void> cleanupExpiredTrash() async {
+  Future<void> _cleanupExpiredTrash() async {
     final trashLifeDays = _appSettings.trashLifeDays;
 
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -61,16 +61,9 @@ class PrivateAssetService {
       whereArgs: [PrivateCategory.trash.name, cutoff],
     );
 
-    final trashPath = await _getTrashPath();
-
-    for (final item in expired) {
-      final id = item['id'] as String;
-
-      final file = File(p.join(trashPath, id));
-
-      if (await file.exists()) {
-        await file.delete();
-      }
+    final expiredAssets = expired.map((e) => PrivateAsset.fromMap(e)).toList();
+    for (final item in expiredAssets) {
+      await _cleanupPrivateFiles(item);
     }
   }
 
@@ -106,7 +99,7 @@ class PrivateAssetService {
     List<AssetEntity> assets, {
     OperationController? op,
   }) async {
-    final trashDirPath = await _getTrashPath();
+    List<String> assetIdsToDelete = [];
 
     if (op != null) op.status.value = OperationStatus.running;
     int total = assets.length;
@@ -116,8 +109,15 @@ class PrivateAssetService {
       final file = await asset.originFile;
       if (file == null) return;
 
-      final targetPath = p.join(trashDirPath, asset.id);
-      await file.copy(targetPath);
+      final result = await Future.wait([
+        _saveThumbnail(asset),
+        _saveAsset(asset),
+      ]);
+      if (result.contains(false)) {
+        done++;
+        if (op != null) op.updateProgress(done, total);
+        continue;
+      }
 
       final item = PrivateAsset.fromAssetEntity(asset, PrivateCategory.trash);
 
@@ -127,11 +127,13 @@ class PrivateAssetService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
+      assetIdsToDelete.add(asset.id);
+
       done++;
       if (op != null) op.updateProgress(done, total);
     }
 
-    await PhotoManager.editor.deleteWithIds(assets.map((a) => a.id).toList());
+    await PhotoManager.editor.deleteWithIds(assetIdsToDelete);
     if (op != null) op.resultMessage = '$done item(s) deleted successfully.';
     if (op != null) op.status.value = OperationStatus.completed;
   }
@@ -145,7 +147,7 @@ class PrivateAssetService {
     int done = 0;
     if (op != null) op.updateProgress(done, total);
 
-    List<AssetEntity> assetsToDelete = [];
+    List<String> assetIdsToDelete = [];
 
     for (final asset in assets) {
       final file = await asset.originFile;
@@ -174,15 +176,13 @@ class PrivateAssetService {
         item.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      assetsToDelete.add(asset);
+      assetIdsToDelete.add(asset.id);
 
       done++;
       if (op != null) op.updateProgress(done, total);
     }
 
-    await PhotoManager.editor.deleteWithIds(
-      assetsToDelete.map((a) => a.id).toList(),
-    );
+    await PhotoManager.editor.deleteWithIds(assetIdsToDelete);
     if (op != null) op.resultMessage = '$done item(s) hidden successfully.';
     if (op != null) op.status.value = OperationStatus.completed;
   }
@@ -235,6 +235,65 @@ class PrivateAssetService {
     return data.buffer.asUint8List();
   }
 
+  Future<void> _saveThumbnail(AssetEntity asset) async {
+    Uint8List thumbBytes;
+
+    try {
+      final data = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(200, 200),
+      );
+
+      if (data != null) {
+        thumbBytes = data;
+      } else {
+        thumbBytes = await _getPlaceholderBytes(
+          asset.type == AssetType.image
+              ? 'image_thumbnail_placeholder'
+              : 'video_thumbnail_placeholder',
+        );
+      }
+    } catch (e) {
+      thumbBytes = await _getPlaceholderBytes(
+        asset.type == AssetType.image
+            ? 'image_thumbnail_placeholder'
+            : 'video_thumbnail_placeholder',
+      );
+    }
+
+    final hiddenDirPath = await _getTrashPath();
+
+    await File(
+      p.join(hiddenDirPath, "${asset.id}_thumb"),
+    ).writeAsBytes(thumbBytes);
+  }
+
+  Future<Uint8List?> getThumbnail(PrivateAsset asset) async {
+    final hiddenDirPath = await _getTrashPath();
+    final thumbFile = File(p.join(hiddenDirPath, "${asset.id}_thumb"));
+    if (!thumbFile.existsSync()) return null;
+    return thumbFile.readAsBytesSync();
+  }
+
+  Future<bool> _saveAsset(AssetEntity asset) async {
+    final file = await asset.originFile;
+    if (file == null) return false;
+
+    try {
+      final hiddenDirPath = await _getTrashPath();
+      await file.copy(p.join(hiddenDirPath, asset.id));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<File?> getAsset(PrivateAsset asset) async {
+    final hiddenDirPath = await _getTrashPath();
+    final assetFile = File(p.join(hiddenDirPath, asset.id));
+    if (!assetFile.existsSync()) return null;
+    return assetFile;
+  }
+
   Future<void> _saveEncryptedThumbnail(AssetEntity asset) async {
     Uint8List thumbBytes;
 
@@ -268,6 +327,14 @@ class PrivateAssetService {
     ).writeAsBytes(encryptedThumb);
   }
 
+  Future<Uint8List?> getDecryptedThumbnail(PrivateAsset asset) async {
+    final hiddenDirPath = await _getHiddenPath();
+    final thumbFile = File(p.join(hiddenDirPath, "${asset.id}_thumb.enc"));
+    if (!thumbFile.existsSync()) return null;
+    final encryptedThumb = thumbFile.readAsBytesSync();
+    return _decryptBytes(encryptedThumb);
+  }
+
   Future<void> _saveEncryptedPreview(AssetEntity asset) async {
     Uint8List previewBytes;
 
@@ -293,6 +360,14 @@ class PrivateAssetService {
     ).writeAsBytes(encryptedThumb);
   }
 
+  Future<Uint8List?> getDecryptedPreview(PrivateAsset asset) async {
+    final hiddenDirPath = await _getHiddenPath();
+    final previewFile = File(p.join(hiddenDirPath, "${asset.id}_preview.enc"));
+    if (!previewFile.existsSync()) return null;
+    final encrypted = previewFile.readAsBytesSync();
+    return _decryptBytes(encrypted);
+  }
+
   Future<bool> _saveEncryptedImage(AssetEntity asset) async {
     final bytes = await asset.originBytes;
     if (bytes == null) return false;
@@ -308,6 +383,14 @@ class PrivateAssetService {
     } catch (e) {
       return false;
     }
+  }
+
+  Future<Uint8List?> getDecryptedImage(PrivateAsset asset) async {
+    final hiddenDirPath = await _getHiddenPath();
+    final encFile = File(p.join(hiddenDirPath, "${asset.id}.enc"));
+    if (!encFile.existsSync()) return null;
+    final encryptedData = encFile.readAsBytesSync();
+    return _decryptBytes(encryptedData);
   }
 
   Future<bool> _saveEncryptedVideo(AssetEntity asset) async {
@@ -329,30 +412,6 @@ class PrivateAssetService {
     }
   }
 
-  Future<Uint8List?> getDecryptedThumbnail(PrivateAsset asset) async {
-    final hiddenDirPath = await _getHiddenPath();
-    final thumbFile = File(p.join(hiddenDirPath, "${asset.id}_thumb.enc"));
-    if (!thumbFile.existsSync()) return null;
-    final encryptedThumb = thumbFile.readAsBytesSync();
-    return _decryptBytes(encryptedThumb);
-  }
-
-  Future<Uint8List?> getDecryptedPreview(PrivateAsset asset) async {
-    final hiddenDirPath = await _getHiddenPath();
-    final previewFile = File(p.join(hiddenDirPath, "${asset.id}_preview.enc"));
-    if (!previewFile.existsSync()) return null;
-    final encrypted = previewFile.readAsBytesSync();
-    return _decryptBytes(encrypted);
-  }
-
-  Future<Uint8List?> getDecryptedImage(PrivateAsset asset) async {
-    final hiddenDirPath = await _getHiddenPath();
-    final encFile = File(p.join(hiddenDirPath, "${asset.id}.enc"));
-    if (!encFile.existsSync()) return null;
-    final encryptedData = encFile.readAsBytesSync();
-    return _decryptBytes(encryptedData);
-  }
-
   Future<File?> getDecryptedVideo(PrivateAsset asset) async {
     try {
       final hiddenDir = await _getHiddenPath();
@@ -365,7 +424,11 @@ class PrivateAssetService {
         await cacheDir.create(recursive: true);
       }
 
-      final outFile = File(p.join(cacheDir.path, "${asset.id}.mp4"));
+      final outFile = File(p.join(cacheDir.path, asset.title));
+
+      // if (await outFile.exists()) {
+      //   return outFile;
+      // }
 
       await FileCryptoService.decryptFile(
         inputPath: encFile.path,
@@ -401,7 +464,7 @@ class PrivateAssetService {
     int done = 0;
 
     for (final item in items) {
-      final encFile = item.getLocalFile(hiddenDirPath);
+      final encFile = File(p.join(hiddenDirPath, "${item.id}.enc"));
 
       if (!await encFile.exists()) continue;
 
@@ -451,14 +514,18 @@ class PrivateAssetService {
     List<PrivateAsset> items, {
     OperationController? op,
   }) async {
-    final trashDirPath = await _getTrashPath();
 
     if (op != null) op.status.value = OperationStatus.running;
     int total = items.length;
     int done = 0;
 
     for (final item in items) {
-      final file = item.getLocalFile(trashDirPath);
+      final file = await getAsset(item);
+      if (file == null) {
+        done++;
+        if (op != null) op.updateProgress(done, total);
+        continue;
+      }
 
       if (await file.exists()) {
         if (item.type == AssetMediaType.image) {
@@ -501,17 +568,13 @@ class PrivateAssetService {
     List<PrivateAsset> items, {
     OperationController? op,
   }) async {
-    final trashDirPath = await _getTrashPath();
-
     if (op != null) op.status.value = OperationStatus.running;
     int total = items.length;
     int done = 0;
 
     for (final item in items) {
-      final file = item.getLocalFile(trashDirPath);
-      if (await file.exists()) await file.delete();
-
       await _deleteFromDb(item.id);
+      await _cleanupPrivateFiles(item);
 
       done++;
       if (op != null) op.updateProgress(done, total);
@@ -525,12 +588,12 @@ class PrivateAssetService {
     await _db.delete('private_assets', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<void> _cleanupPrivateFiles(PrivateAsset item) async {
+  Future<void> _cleanupPrivateFiles(PrivateAsset asset) async {
     final hiddenDir = await _getHiddenPath();
 
-    final encFile = File(p.join(hiddenDir, "${item.id}.enc"));
-    final thumbFile = File(p.join(hiddenDir, "${item.id}_thumb.enc"));
-    final previewFile = File(p.join(hiddenDir, "${item.id}_preview.enc"));
+    final encFile = File(p.join(hiddenDir, "${asset.id}.enc"));
+    final thumbFile = File(p.join(hiddenDir, "${asset.id}_thumb.enc"));
+    final previewFile = File(p.join(hiddenDir, "${asset.id}_preview.enc"));
 
     if (await encFile.exists()) await encFile.delete();
     if (await thumbFile.exists()) await thumbFile.delete();
@@ -540,8 +603,16 @@ class PrivateAssetService {
     final tempDir = await getTemporaryDirectory();
     final cacheDir = Directory(p.join(tempDir.path, "vault_video_cache"));
 
-    final cachedVideo = File(p.join(cacheDir.path, "${item.id}.mp4"));
+    final cachedVideo = File(p.join(cacheDir.path, asset.title));
     if (await cachedVideo.exists()) await cachedVideo.delete();
+
+    final trashDir = await _getTrashPath();
+
+    final trashFile = File(p.join(trashDir, asset.id));
+    final trashThumb = File(p.join(trashDir, "${asset.id}_thumb"));
+
+    if (await trashFile.exists()) await trashFile.delete();
+    if (await trashThumb.exists()) await trashThumb.delete();
   }
 
   Future<void> clearAllTrash() async {

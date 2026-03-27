@@ -1,13 +1,12 @@
-import 'dart:typed_data';
-
 import 'package:chewie/chewie.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:gallery/models/private_asset_model.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../controllers/private_asset_controller.dart';
+import '../../models/private_asset_model.dart';
 
 class PrivateAssetViewPage extends StatefulWidget {
   final Uint8List? thumbnail;
@@ -289,6 +288,7 @@ class _VideoViewerState extends State<_VideoViewer> {
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
   Uint8List? _preview;
+  bool _error = false;
 
   Future<void> _loadPreview() async {
     _preview = await widget.controller.getVideoPreview(widget.item);
@@ -296,20 +296,34 @@ class _VideoViewerState extends State<_VideoViewer> {
   }
 
   Future<void> _loadVideo() async {
-    final file = await widget.controller.getCompleteVideoFile(widget.item);
-    if (file == null) return;
-    _videoController = VideoPlayerController.file(file);
-    await _videoController!.initialize();
+    try {
+      final file = await widget.controller.getCompleteVideoFile(widget.item);
+      if (file == null) {
+        setState(() {
+          _error = true;
+        });
+        return;
+      }
+      _videoController = VideoPlayerController.file(file);
+      await _videoController!.initialize();
 
-    _chewieController = ChewieController(
-      videoPlayerController: _videoController!,
-      looping: true,
-      allowFullScreen: false,
-      allowPlaybackSpeedChanging: true,
-      zoomAndPan: true,
-    );
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        looping: true,
+        allowFullScreen: false,
+        allowPlaybackSpeedChanging: true,
+        zoomAndPan: true,
+      );
 
-    setState(() {});
+      setState(() {});
+    } catch (e) {
+      if (kDebugMode) {
+        print(e.toString());
+      }
+      setState(() {
+        _error = true;
+      });
+    }
   }
 
   @override
@@ -326,9 +340,18 @@ class _VideoViewerState extends State<_VideoViewer> {
       child: Center(
         child: _chewieController != null
             ? Chewie(controller: _chewieController!)
-            : _preview != null
-            ? Image.memory(_preview!, fit: BoxFit.cover)
-            : Image.memory(widget.thumbnail!, fit: BoxFit.cover),
+            : Stack(
+                alignment: Alignment.center,
+                children: [
+                  Image.memory(
+                    _preview ?? widget.thumbnail!,
+                    fit: BoxFit.cover,
+                  ),
+                  _error
+                      ? Icon(Icons.warning_rounded, color: Colors.red, size: 50)
+                      : CircularProgressIndicator(color: Colors.white),
+                ],
+              ),
       ),
     );
   }

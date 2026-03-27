@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../services/authentication_service.dart';
 import '../../controllers/private_asset_controller.dart';
 import '../../core/operations/operation_dialog.dart';
 import '../../dependency_injector.dart';
 import '../../models/private_asset_model.dart';
+import '../../services/authentication_service.dart';
 import '../../services/private_asset_service.dart';
 import 'private_asset_tile.dart';
 import 'private_asset_view_page.dart';
@@ -130,8 +130,10 @@ class _PrivateGridPageState extends State<PrivateGridPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            PrivateAssetViewPage(thumbnail: thumbnail, controller: controller),
+                        builder: (context) => PrivateAssetViewPage(
+                          thumbnail: thumbnail,
+                          controller: controller,
+                        ),
                       ),
                     );
                   }

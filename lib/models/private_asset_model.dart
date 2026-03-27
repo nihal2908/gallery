@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:photo_manager/photo_manager.dart';
 
 enum AssetMediaType { image, video }
@@ -100,11 +98,6 @@ class PrivateAsset {
       'created_at': createdAt.millisecondsSinceEpoch,
       'processed_at': processedAt.millisecondsSinceEpoch,
     };
-  }
-
-  // Helper to get the local file in the app's internal trash folder
-  File getLocalFile(String trashDirPath) {
-    return File('$trashDirPath/$id.enc');
   }
 
   @override
